@@ -221,7 +221,19 @@ const { useState, useEffect, useMemo, useCallback } = React;
    See schema.sql for the tables this app expects.
    ------------------------------------------------------------- */
 const PROXY_URL = "https://timber-twine-proxy.jengrovdahl.workers.dev";
-const MN_STATE_TAX = 0.06875; // Minnesota base rate; county add-on table to be wired in like Hen House
+const LOCATIONS = [
+  { name: "Blooming Prairie", rate: 0.07375 },
+  { name: "Austin", rate: 0.07875 },
+  { name: "Owatonna", rate: 0.07375 },
+  { name: "Rochester", rate: 0.08125 },
+  { name: "Ellendale", rate: 0.07375 },
+  { name: "Brownsdale", rate: 0.07375 },
+  { name: "Lansing", rate: 0.07375 },
+  { name: "Byron", rate: 0.07375 },
+  { name: "Dodge Center", rate: 0.07375 },
+  { name: "Kasson", rate: 0.07375 },
+  { name: "Mantorville", rate: 0.07375 },
+]; // MN Dept. of Revenue combined rates, effective 7/1/2026-9/30/2026
 
 /* ---------------------------------------------------------------
    Seed catalog — placeholder until the real product list is
@@ -333,10 +345,20 @@ function ProductGrid({ products, onAdd }) {
   );
 }
 
-function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut }) {
-  const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
-  const tax = subtotal * MN_STATE_TAX;
-  const total = subtotal + tax;
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange }) {
+  const rate = LOCATIONS.find(l => l.name === location)?.rate ?? LOCATIONS[0].rate;
+  const rawSubtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
+
+  let subtotal, tax, total;
+  if (paymentMethod === "cash") {
+    total = rawSubtotal;
+    subtotal = rawSubtotal / (1 + rate);
+    tax = total - subtotal;
+  } else {
+    subtotal = rawSubtotal;
+    tax = rawSubtotal * rate;
+    total = rawSubtotal + tax;
+  }
 
   return (
     <div className="panel">
@@ -356,15 +378,37 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut }) {
           </div>
         </div>
       ))}
+
+      <div className="field-row" style={{ marginTop: 14 }}>
+        <div>
+          <label>Location</label>
+          <select value={location} onChange={e => onLocationChange(e.target.value)}>
+            {LOCATIONS.map(l => (
+              <option key={l.name} value={l.name}>{l.name} ({(l.rate*100).toFixed(3)}%)</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Payment</label>
+          <select value={paymentMethod} onChange={e => onPaymentMethodChange(e.target.value)}>
+            <option value="card">Card (tax added)</option>
+            <option value="cash">Cash (tax included)</option>
+          </select>
+        </div>
+      </div>
+
       <div style={{ marginTop: 12 }}>
         <div className="totals-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
-        <div className="totals-row"><span>Tax (MN {(MN_STATE_TAX*100).toFixed(3)}%)</span><span>{formatMoney(tax)}</span></div>
+        <div className="totals-row"><span>Tax ({location}, {(rate*100).toFixed(3)}%)</span><span>{formatMoney(tax)}</span></div>
         <div className="totals-row grand"><span>Total</span><span>{formatMoney(total)}</span></div>
       </div>
+      {paymentMethod === "cash" && (
+        <div className="cart-line-sub" style={{ marginTop: 6 }}>Cash sales charge exactly the sticker price — tax is backed out of that total for your records.</div>
+      )}
       <button
         className="btn btn-primary btn-full"
         disabled={cart.length === 0 || checkingOut}
-        onClick={() => onCheckout(subtotal, tax, total)}
+        onClick={() => onCheckout(subtotal, tax, total, paymentMethod, location)}
       >
         {checkingOut ? "Recording sale…" : "Complete Sale"}
       </button>
@@ -456,6 +500,8 @@ function App() {
   const [cart, setCart] = useState([]);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSale, setLastSale] = useState(null);
+  const [location, setLocation] = useState(LOCATIONS[0].name);
+  const [paymentMethod, setPaymentMethod] = useState("card");
 
   const addProduct = useCallback((p) => {
     setCart(prev => {
@@ -482,13 +528,13 @@ function App() {
     setCart(prev => prev.filter(l => l.key !== key));
   }, []);
 
-  const checkout = useCallback(async (subtotal, tax, total) => {
+  const checkout = useCallback(async (subtotal, tax, total, paymentMethod, location) => {
     setCheckingOut(true);
     try {
       const res = await fetch(PROXY_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtotal, tax, total, items: cart }),
+        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart }),
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
@@ -521,6 +567,10 @@ function App() {
               onRemove={removeLine}
               onCheckout={checkout}
               checkingOut={checkingOut}
+              location={location}
+              onLocationChange={setLocation}
+              paymentMethod={paymentMethod}
+              onPaymentMethodChange={setPaymentMethod}
             />
           </div>
         )}
@@ -534,6 +584,10 @@ function App() {
               onRemove={removeLine}
               onCheckout={checkout}
               checkingOut={checkingOut}
+              location={location}
+              onLocationChange={setLocation}
+              paymentMethod={paymentMethod}
+              onPaymentMethodChange={setPaymentMethod}
             />
           </div>
         )}
