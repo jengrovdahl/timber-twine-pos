@@ -147,6 +147,11 @@
     text-transform:uppercase;
     display:flex; align-items:center; gap:10px;
   }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin-bottom:14px;
+  }
+  .panel-head h2{margin:0; flex:none;}
   .panel h2::after{
     content:"";
     flex:1;
@@ -156,10 +161,11 @@
 
   .catalog-grid{
     display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(140px,1fr));
+    grid-template-columns:repeat(auto-fill, minmax(150px,1fr));
     gap:12px;
   }
   .product-card{
+    position:relative;
     border:1px solid var(--line);
     border-radius:var(--radius);
     background:var(--cream);
@@ -167,8 +173,8 @@
     text-align:left;
     transition:transform .12s ease, box-shadow .12s ease;
   }
-  .product-card:hover{ transform:translateY(-2px); box-shadow:var(--shadow); }
-  .product-name{font-weight:600; font-size:14.5px; margin-bottom:4px;}
+  .product-card.clickable:hover{ transform:translateY(-2px); box-shadow:var(--shadow); cursor:pointer; }
+  .product-name{font-weight:600; font-size:14.5px; margin-bottom:4px; padding-right:56px;}
   .product-cat{font-size:11.5px; color:var(--ink-soft); margin-bottom:8px;}
   .product-price{font-weight:600; color:var(--rose-dark);}
   .stock-pill{
@@ -182,6 +188,23 @@
   }
   .stock-pill.low{background:#f6e2d9; color:#9a4a1f;}
   .stock-pill.out{background:#f3dcdc; color:#a03030;}
+
+  .card-actions{
+    position:absolute; top:8px; right:8px;
+    display:flex; gap:4px;
+  }
+  .icon-btn{
+    width:26px; height:26px;
+    border-radius:6px;
+    border:1px solid var(--line);
+    background:var(--white);
+    font-size:13px;
+    display:flex; align-items:center; justify-content:center;
+    padding:0;
+    flex-shrink:0;
+  }
+  .icon-btn:hover{background:var(--cream-2);}
+  .icon-btn.danger:hover{background:#f3dcdc; border-color:#e0a8a8;}
 
   .cart-line{
     display:flex; justify-content:space-between; align-items:center;
@@ -208,9 +231,10 @@
   .btn-outline{background:transparent; border:1px solid var(--forest); color:var(--forest);}
   .btn-outline:hover{background:var(--forest); color:var(--white);}
   .btn-full{width:100%; margin-top:14px;}
+  .btn-sm{padding:7px 14px; font-size:13px;}
 
-  .field-row{display:flex; gap:10px; margin-bottom:10px;}
-  .field-row > div{flex:1; display:flex; flex-direction:column; gap:4px;}
+  .field-row{display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;}
+  .field-row > div{flex:1; min-width:120px; display:flex; flex-direction:column; gap:4px;}
   .field-row label{font-size:12.5px; color:var(--ink-soft);}
   .calc-result{
     background:var(--cream-2);
@@ -220,6 +244,20 @@
     font-size:14px;
   }
   .calc-result strong{color:var(--forest);}
+
+  .stat-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(140px,1fr));
+    gap:12px;
+    margin-top:14px;
+  }
+  .stat-card{
+    background:var(--cream-2);
+    border-radius:8px;
+    padding:12px 14px;
+  }
+  .stat-card .stat-label{font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em;}
+  .stat-card .stat-value{font-size:20px; font-weight:700; color:var(--forest); margin-top:2px;}
 
   .coming-soon{
     text-align:center; padding:60px 20px; color:var(--ink-soft);
@@ -240,8 +278,7 @@
 const { useState, useEffect, useMemo, useCallback } = React;
 
 /* ---------------------------------------------------------------
-   CONFIG — fill these in once the Turso database exists.
-   See schema.sql for the tables this app expects.
+   CONFIG
    ------------------------------------------------------------- */
 const PROXY_URL = "https://timber-twine-proxy.jengrovdahl.workers.dev";
 const LOCATIONS = [
@@ -258,11 +295,6 @@ const LOCATIONS = [
   { name: "Mantorville", rate: 0.07375 },
 ]; // MN Dept. of Revenue combined rates, effective 7/1/2026-9/30/2026
 
-/* ---------------------------------------------------------------
-   Seed catalog — placeholder until the real product list is
-   loaded from Turso. Mirrors the "repeatable item" side of the
-   business (the one-off customs go through the Custom Order tab).
-   ------------------------------------------------------------- */
 const SEED_PRODUCTS = [
   { id: "p1", name: "Rainbow Frog", category: "Crochet", price: 18, stock: 10 },
   { id: "p2", name: "Forest Dino", category: "Crochet", price: 22, stock: 4 },
@@ -273,8 +305,7 @@ const SEED_PRODUCTS = [
 ];
 
 /* ---------------------------------------------------------------
-   Wreath mark — a light abstraction of the Timber & Twine logo's
-   floral wreath, used sparingly (header + empty states only).
+   Wreath mark
    ------------------------------------------------------------- */
 function Wreath({ className }) {
   return (
@@ -297,7 +328,7 @@ function Wreath({ className }) {
 }
 
 function formatMoney(n) {
-  return `$${n.toFixed(2)}`;
+  return `$${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
 }
 
 function Header() {
@@ -314,13 +345,18 @@ function Header() {
   );
 }
 
+/* ---------------------------------------------------------------
+   Area names match Hen House POS so the same person can support
+   both apps: POS, Products, Sales. Custom Order is unique to
+   Timber & Twine's made-to-order side of the business.
+   ------------------------------------------------------------- */
 const TABS = [
-  { id: "checkout", label: "Checkout" },
+  { id: "pos", label: "POS" },
+  { id: "products", label: "Products" },
+  { id: "sales", label: "Sales" },
   { id: "custom", label: "Custom Order" },
-  { id: "catalog", label: "Catalog" },
-  { id: "inventory", label: "Inventory" },
   { id: "giftcards", label: "Gift Cards", disabled: true },
-  { id: "timekeeping", label: "Timekeeping", disabled: true },
+  { id: "timekeeping", label: "Time", disabled: true },
   { id: "reports", label: "Reports", disabled: true },
 ];
 
@@ -341,27 +377,40 @@ function TabBar({ active, onChange }) {
   );
 }
 
-function ProductGrid({ products, onAdd }) {
+/* ---------------------------------------------------------------
+   ProductGrid — used on the POS page (click to add to cart) and,
+   with onEdit/onDelete supplied, on the Products page (management).
+   ------------------------------------------------------------- */
+function ProductGrid({ products, onAdd, onEdit, onDelete }) {
   return (
     <div className="catalog-grid">
       {products.map(p => {
         const low = p.stock > 0 && p.stock <= 3;
         const out = p.stock <= 0;
+        const manageMode = !!(onEdit || onDelete);
         return (
-          <button
+          <div
             key={p.id}
-            className="product-card"
-            onClick={() => !out && onAdd(p)}
-            disabled={out}
-            style={out ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+            className={"product-card" + (onAdd && !out ? " clickable" : "")}
+            onClick={() => { if (onAdd && !out) onAdd(p); }}
           >
+            {manageMode && (
+              <div className="card-actions">
+                {onEdit && (
+                  <button className="icon-btn" title="Edit" onClick={(e) => { e.stopPropagation(); onEdit(p); }}>✎</button>
+                )}
+                {onDelete && (
+                  <button className="icon-btn danger" title="Delete" onClick={(e) => { e.stopPropagation(); onDelete(p); }}>🗑</button>
+                )}
+              </div>
+            )}
             <div className="product-name">{p.name}</div>
-            <div className="product-cat">{p.category}</div>
+            <div className="product-cat">{p.category || "Uncategorized"}</div>
             <div className="product-price">{formatMoney(p.price)}</div>
             <span className={"stock-pill" + (out ? " out" : low ? " low" : "")}>
               {out ? "Out of stock" : `${p.stock} in stock`}
             </span>
-          </button>
+          </div>
         );
       })}
     </div>
@@ -517,6 +566,10 @@ function ComingSoon({ label }) {
   );
 }
 
+/* ---------------------------------------------------------------
+   Products page — grid of ManageProductGrid cards with edit/delete
+   icons, plus an Add/Edit form. Mirrors Hen House's Product Catalog.
+   ------------------------------------------------------------- */
 function ProductForm({ initial, onSave, onCancel, saving }) {
   const [name, setName] = useState(initial?.name || "");
   const [category, setCategory] = useState(initial?.category || "");
@@ -537,7 +590,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
   const canSave = name.trim().length > 0 && !isNaN(finalPrice) && finalPrice >= 0;
 
   return (
-    <div className="panel">
+    <div className="panel" style={{ marginTop: 18 }}>
       <h2>{initial ? "Edit Product" : "Add Product"}</h2>
       <div className="field-row">
         <div style={{ flex: 2 }}>
@@ -581,8 +634,8 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
         <div className="calc-result">
           Calculated price: <strong>{formatMoney(calculated)}</strong>
           <button
-            className="btn btn-outline"
-            style={{ marginLeft: 12, padding: "4px 12px", fontSize: 13 }}
+            className="btn btn-outline btn-sm"
+            style={{ marginLeft: 12 }}
             onClick={() => setPrice(calculated.toFixed(2))}
           >
             Use this price
@@ -609,51 +662,224 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
             price: finalPrice,
           })}
         >
-          {saving ? "Saving\u2026" : initial ? "Save Changes" : "Add Product"}
+          {saving ? "Saving…" : initial ? "Save Changes" : "Add Product"}
         </button>
-        {initial && (
-          <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
-        )}
+        <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );
 }
 
-function InventoryPanel({ products, onSave, saving, loadError }) {
+function ProductsPanel({ products, onSave, onDelete, saving, loadError }) {
+  const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const editing = editingId ? products.find(p => p.id === editingId) : null;
 
   return (
-    <div className="layout">
+    <div>
       <div className="panel">
-        <h2>Products</h2>
-        {loadError && <div className="cart-line-sub" style={{ marginBottom: 10 }}>Couldn\u2019t load products from the database \u2014 {loadError}</div>}
-        {products.length === 0 && !loadError && <div className="cart-empty">No products yet \u2014 add your first one.</div>}
-        {products.map(p => (
-          <div className="cart-line" key={p.id}>
+        <div className="panel-head">
+          <h2>Products</h2>
+          <button className="btn btn-primary btn-sm" onClick={() => { setEditingId(null); setFormOpen(true); }}>
+            + Add Product
+          </button>
+        </div>
+        {loadError && <div className="cart-line-sub" style={{ marginBottom: 10 }}>Couldn’t load products from the database — {loadError}</div>}
+        {products.length === 0 && !loadError && <div className="cart-empty">No products yet — add your first one.</div>}
+        <ProductGrid
+          products={products}
+          onEdit={(p) => { setEditingId(p.id); setFormOpen(true); }}
+          onDelete={(p) => onDelete(p)}
+        />
+      </div>
+
+      {formOpen && (
+        <ProductForm
+          key={editingId || "new"}
+          initial={editing}
+          saving={saving}
+          onSave={async (data) => { await onSave(data); setFormOpen(false); setEditingId(null); }}
+          onCancel={() => { setFormOpen(false); setEditingId(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   Sales page — history, summary stats, date filter, edit/delete.
+   Mirrors Hen House's Sales History.
+   ------------------------------------------------------------- */
+function SaleEditForm({ sale, onSave, onCancel, saving }) {
+  const [paymentMethod, setPaymentMethod] = useState(sale.paymentMethod || "card");
+  const [location, setLocation] = useState(sale.location || LOCATIONS[0].name);
+  const [total, setTotal] = useState(String(sale.total));
+
+  return (
+    <div className="panel" style={{ marginTop: 18 }}>
+      <h2>Edit Sale</h2>
+      <div className="field-row">
+        <div>
+          <label>Location</label>
+          <select value={location} onChange={e => setLocation(e.target.value)}>
+            {LOCATIONS.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Payment</label>
+          <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+            <option value="card">Card</option>
+            <option value="cash">Cash</option>
+          </select>
+        </div>
+        <div>
+          <label>Total ($)</label>
+          <input type="number" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+        <button
+          className="btn btn-primary"
+          disabled={saving}
+          onClick={() => onSave({
+            id: sale.id,
+            subtotal: sale.subtotal,
+            tax: sale.tax,
+            total: parseFloat(total),
+            paymentMethod,
+            location,
+          })}
+        >
+          {saving ? "Saving…" : "Save Changes"}
+        </button>
+        <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function SalesPanel() {
+  const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [editingSale, setEditingSale] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const loadSales = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const res = await fetch(`${PROXY_URL}/sales?${params.toString()}`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      setSales(Array.isArray(data.sales) ? data.sales : []);
+    } catch (err) {
+      console.error(err);
+      setLoadError(err.message || "couldn't reach the server");
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => { loadSales(); }, [loadSales]);
+
+  const deleteSale = async (id) => {
+    if (!window.confirm("Delete this sale? This can't be undone.")) return;
+    try {
+      const res = await fetch(`${PROXY_URL}/sales?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      setSales(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't delete the sale — check the console for details.");
+    }
+  };
+
+  const saveSaleEdit = async (data) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${PROXY_URL}/sales`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      setSales(prev => prev.map(s => s.id === data.id ? { ...s, ...data } : s));
+      setEditingSale(null);
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't update the sale — check the console for details.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const revenue = sales.reduce((s, r) => s + r.total, 0);
+  const taxCollected = sales.reduce((s, r) => s + r.tax, 0);
+  const txCount = sales.length;
+  const avgSale = txCount ? revenue / txCount : 0;
+
+  return (
+    <div>
+      <div className="panel">
+        <h2>Sales History</h2>
+        <div className="field-row">
+          <div>
+            <label>From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+          </div>
+          <div>
+            <label>To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); }}>Clear</button>
+          </div>
+        </div>
+        <div className="stat-grid">
+          <div className="stat-card"><div className="stat-label">Revenue</div><div className="stat-value">{formatMoney(revenue)}</div></div>
+          <div className="stat-card"><div className="stat-label">Tax Collected</div><div className="stat-value">{formatMoney(taxCollected)}</div></div>
+          <div className="stat-card"><div className="stat-label">Transactions</div><div className="stat-value">{txCount}</div></div>
+          <div className="stat-card"><div className="stat-label">Avg Sale</div><div className="stat-value">{formatMoney(avgSale)}</div></div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: 18 }}>
+        {loading && <div className="cart-empty">Loading sales…</div>}
+        {loadError && <div className="cart-line-sub">Couldn't load sales — {loadError}</div>}
+        {!loading && !loadError && sales.length === 0 && <div className="cart-empty">No sales in this range.</div>}
+        {!loading && sales.map(s => (
+          <div className="cart-line" key={s.id}>
             <div>
-              <div className="cart-line-name">{p.name}</div>
-              <div className="cart-line-sub">{p.category || "Uncategorized"} \u00b7 {formatMoney(p.price)} \u00b7 {p.stock} in stock</div>
+              <div className="cart-line-name">
+                {new Date(s.createdAt).toLocaleDateString()} — {(s.items || []).map(i => `${i.description}×${i.quantity}`).join(", ") || "(no items on file)"}
+              </div>
+              <div className="cart-line-sub">
+                {s.location || "—"} · {s.paymentMethod || "—"} · Sub {formatMoney(s.subtotal)} · Tax {formatMoney(s.tax)} · Total {formatMoney(s.total)}
+              </div>
             </div>
-            <button className="btn btn-outline" style={{ padding: "6px 14px", fontSize: 13 }} onClick={() => setEditingId(p.id)}>
-              Edit
-            </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="icon-btn" title="Edit" onClick={() => setEditingSale(s)}>✎</button>
+              <button className="icon-btn danger" title="Delete" onClick={() => deleteSale(s.id)}>🗑</button>
+            </div>
           </div>
         ))}
       </div>
-      <ProductForm
-        key={editingId || "new"}
-        initial={editing}
-        saving={saving}
-        onSave={async (data) => { await onSave(data); setEditingId(null); }}
-        onCancel={() => setEditingId(null)}
-      />
+
+      {editingSale && (
+        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} />
+      )}
     </div>
   );
 }
 
 function App() {
-  const [tab, setTab] = useState("checkout");
+  const [tab, setTab] = useState("pos");
   const [products, setProducts] = useState(SEED_PRODUCTS);
   const [productsLoadError, setProductsLoadError] = useState(null);
   const [savingProduct, setSavingProduct] = useState(false);
@@ -702,9 +928,21 @@ function App() {
       });
     } catch (err) {
       console.error(err);
-      alert("Couldn't save the product \u2014 check the console for details.");
+      alert("Couldn't save the product — check the console for details.");
     } finally {
       setSavingProduct(false);
+    }
+  }, []);
+
+  const deleteProduct = useCallback(async (p) => {
+    if (!window.confirm(`Delete "${p.name}"? This can't be undone.`)) return;
+    try {
+      const res = await fetch(`${PROXY_URL}/products?id=${encodeURIComponent(p.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      setProducts(prev => prev.filter(item => item.id !== p.id));
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't delete the product — check the console for details.");
     }
   }, []);
 
@@ -761,68 +999,65 @@ function App() {
       <div className="app-body">
         <TabBar active={tab} onChange={setTab} />
         <main>
-        {tab === "checkout" && (
-          <div className="layout">
-            <div className="panel">
-              <h2>Catalog</h2>
-              <ProductGrid products={products} onAdd={addProduct} />
+          {tab === "pos" && (
+            <div className="layout">
+              <div className="panel">
+                <h2>Products</h2>
+                <ProductGrid products={products} onAdd={addProduct} />
+              </div>
+              <CartPanel
+                cart={cart}
+                onQty={changeQty}
+                onRemove={removeLine}
+                onCheckout={checkout}
+                checkingOut={checkingOut}
+                location={location}
+                onLocationChange={setLocation}
+                paymentMethod={paymentMethod}
+                onPaymentMethodChange={setPaymentMethod}
+              />
             </div>
-            <CartPanel
-              cart={cart}
-              onQty={changeQty}
-              onRemove={removeLine}
-              onCheckout={checkout}
-              checkingOut={checkingOut}
-              location={location}
-              onLocationChange={setLocation}
-              paymentMethod={paymentMethod}
-              onPaymentMethodChange={setPaymentMethod}
+          )}
+
+          {tab === "custom" && (
+            <div className="layout">
+              <CustomOrderPanel onAddToCart={addCustom} />
+              <CartPanel
+                cart={cart}
+                onQty={changeQty}
+                onRemove={removeLine}
+                onCheckout={checkout}
+                checkingOut={checkingOut}
+                location={location}
+                onLocationChange={setLocation}
+                paymentMethod={paymentMethod}
+                onPaymentMethodChange={setPaymentMethod}
+              />
+            </div>
+          )}
+
+          {tab === "products" && (
+            <ProductsPanel
+              products={products}
+              onSave={saveProduct}
+              onDelete={deleteProduct}
+              saving={savingProduct}
+              loadError={productsLoadError}
             />
-          </div>
-        )}
+          )}
 
-        {tab === "custom" && (
-          <div className="layout">
-            <CustomOrderPanel onAddToCart={addCustom} />
-            <CartPanel
-              cart={cart}
-              onQty={changeQty}
-              onRemove={removeLine}
-              onCheckout={checkout}
-              checkingOut={checkingOut}
-              location={location}
-              onLocationChange={setLocation}
-              paymentMethod={paymentMethod}
-              onPaymentMethodChange={setPaymentMethod}
-            />
-          </div>
-        )}
+          {tab === "sales" && <SalesPanel />}
 
-        {tab === "catalog" && (
-          <div className="panel">
-            <h2>Full Catalog</h2>
-            <ProductGrid products={products} onAdd={addProduct} />
-          </div>
-        )}
+          {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
+          {tab === "timekeeping" && <ComingSoon label="Time" />}
+          {tab === "reports" && <ComingSoon label="Reports" />}
 
-        {tab === "inventory" && (
-          <InventoryPanel
-            products={products}
-            onSave={saveProduct}
-            saving={savingProduct}
-            loadError={productsLoadError}
-          />
-        )}
-        {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
-        {tab === "timekeeping" && <ComingSoon label="Timekeeping" />}
-        {tab === "reports" && <ComingSoon label="Reports" />}
-
-        {lastSale && (
-          <div className="panel" style={{ marginTop: 18 }}>
-            <h2>Last Sale</h2>
-            <p>{lastSale.count} item(s) — total {formatMoney(lastSale.total)}</p>
-          </div>
-        )}
+          {lastSale && (
+            <div className="panel" style={{ marginTop: 18 }}>
+              <h2>Last Sale</h2>
+              <p>{lastSale.count} item(s) — total {formatMoney(lastSale.total)}</p>
+            </div>
+          )}
         </main>
       </div>
     </React.Fragment>
