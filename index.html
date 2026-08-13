@@ -295,7 +295,7 @@ const TABS = [
   { id: "checkout", label: "Checkout" },
   { id: "custom", label: "Custom Order" },
   { id: "catalog", label: "Catalog" },
-  { id: "inventory", label: "Inventory", disabled: true },
+  { id: "inventory", label: "Inventory" },
   { id: "giftcards", label: "Gift Cards", disabled: true },
   { id: "timekeeping", label: "Timekeeping", disabled: true },
   { id: "reports", label: "Reports", disabled: true },
@@ -494,14 +494,196 @@ function ComingSoon({ label }) {
   );
 }
 
+function ProductForm({ initial, onSave, onCancel, saving }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [category, setCategory] = useState(initial?.category || "");
+  const [stock, setStock] = useState(initial?.stock != null ? String(initial.stock) : "0");
+  const [price, setPrice] = useState(initial?.price != null ? String(initial.price) : "");
+  const [priceMode, setPriceMode] = useState("manual");
+  const [hours, setHours] = useState("");
+  const [rate, setRate] = useState("15");
+
+  const calculated = useMemo(() => {
+    const h = parseFloat(hours);
+    const r = parseFloat(rate);
+    if (isNaN(h) || isNaN(r)) return null;
+    return h * r;
+  }, [hours, rate]);
+
+  const finalPrice = parseFloat(price);
+  const canSave = name.trim().length > 0 && !isNaN(finalPrice) && finalPrice >= 0;
+
+  return (
+    <div className="panel">
+      <h2>{initial ? "Edit Product" : "Add Product"}</h2>
+      <div className="field-row">
+        <div style={{ flex: 2 }}>
+          <label>Name</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Rainbow Frog" />
+        </div>
+        <div>
+          <label>Category</label>
+          <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Crochet" />
+        </div>
+      </div>
+
+      <div className="field-row">
+        <div>
+          <label>Stock</label>
+          <input type="number" min="0" step="1" value={stock} onChange={e => setStock(e.target.value)} />
+        </div>
+        <div>
+          <label>Price mode</label>
+          <select value={priceMode} onChange={e => setPriceMode(e.target.value)}>
+            <option value="manual">Type price directly</option>
+            <option value="calc">Calculate from hours &times; rate</option>
+          </select>
+        </div>
+      </div>
+
+      {priceMode === "calc" && (
+        <div className="field-row">
+          <div>
+            <label>Hours spent</label>
+            <input type="number" min="0" step="0.25" value={hours} onChange={e => setHours(e.target.value)} placeholder="1.5" />
+          </div>
+          <div>
+            <label>Hourly rate ($)</label>
+            <input type="number" min="0" step="0.5" value={rate} onChange={e => setRate(e.target.value)} />
+          </div>
+        </div>
+      )}
+
+      {priceMode === "calc" && calculated !== null && (
+        <div className="calc-result">
+          Calculated price: <strong>{formatMoney(calculated)}</strong>
+          <button
+            className="btn btn-outline"
+            style={{ marginLeft: 12, padding: "4px 12px", fontSize: 13 }}
+            onClick={() => setPrice(calculated.toFixed(2))}
+          >
+            Use this price
+          </button>
+        </div>
+      )}
+
+      <div className="field-row">
+        <div>
+          <label>Price ($)</label>
+          <input type="number" min="0" step="0.5" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <button
+          className="btn btn-primary"
+          disabled={!canSave || saving}
+          onClick={() => onSave({
+            id: initial?.id,
+            name: name.trim(),
+            category: category.trim(),
+            stock: parseInt(stock, 10) || 0,
+            price: finalPrice,
+          })}
+        >
+          {saving ? "Saving\u2026" : initial ? "Save Changes" : "Add Product"}
+        </button>
+        {initial && (
+          <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InventoryPanel({ products, onSave, saving, loadError }) {
+  const [editingId, setEditingId] = useState(null);
+  const editing = editingId ? products.find(p => p.id === editingId) : null;
+
+  return (
+    <div className="layout">
+      <div className="panel">
+        <h2>Products</h2>
+        {loadError && <div className="cart-line-sub" style={{ marginBottom: 10 }}>Couldn\u2019t load products from the database \u2014 {loadError}</div>}
+        {products.length === 0 && !loadError && <div className="cart-empty">No products yet \u2014 add your first one.</div>}
+        {products.map(p => (
+          <div className="cart-line" key={p.id}>
+            <div>
+              <div className="cart-line-name">{p.name}</div>
+              <div className="cart-line-sub">{p.category || "Uncategorized"} \u00b7 {formatMoney(p.price)} \u00b7 {p.stock} in stock</div>
+            </div>
+            <button className="btn btn-outline" style={{ padding: "6px 14px", fontSize: 13 }} onClick={() => setEditingId(p.id)}>
+              Edit
+            </button>
+          </div>
+        ))}
+      </div>
+      <ProductForm
+        key={editingId || "new"}
+        initial={editing}
+        saving={saving}
+        onSave={async (data) => { await onSave(data); setEditingId(null); }}
+        onCancel={() => setEditingId(null)}
+      />
+    </div>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState("checkout");
-  const [products] = useState(SEED_PRODUCTS);
+  const [products, setProducts] = useState(SEED_PRODUCTS);
+  const [productsLoadError, setProductsLoadError] = useState(null);
+  const [savingProduct, setSavingProduct] = useState(false);
   const [cart, setCart] = useState([]);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [location, setLocation] = useState(LOCATIONS[0].name);
   const [paymentMethod, setPaymentMethod] = useState("card");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${PROXY_URL}/products`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.products)) {
+          setProducts(data.products);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setProductsLoadError(err.message || "couldn't reach the server");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const saveProduct = useCallback(async (data) => {
+    setSavingProduct(true);
+    try {
+      const res = await fetch(`${PROXY_URL}/products`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `Server returned ${res.status}`);
+      }
+      const saved = await res.json();
+      const savedId = saved.id || data.id;
+      setProducts(prev => {
+        const exists = prev.some(p => p.id === savedId);
+        const updated = { id: savedId, name: data.name, category: data.category, price: data.price, stock: data.stock, trackStock: true };
+        return exists ? prev.map(p => p.id === savedId ? updated : p) : [...prev, updated];
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't save the product \u2014 check the console for details.");
+    } finally {
+      setSavingProduct(false);
+    }
+  }, []);
 
   const addProduct = useCallback((p) => {
     setCart(prev => {
@@ -531,7 +713,7 @@ function App() {
   const checkout = useCallback(async (subtotal, tax, total, paymentMethod, location) => {
     setCheckingOut(true);
     try {
-      const res = await fetch(PROXY_URL, {
+      const res = await fetch(`${PROXY_URL}/sale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart }),
@@ -599,7 +781,14 @@ function App() {
           </div>
         )}
 
-        {tab === "inventory" && <ComingSoon label="Inventory Tracking" />}
+        {tab === "inventory" && (
+          <InventoryPanel
+            products={products}
+            onSave={saveProduct}
+            saving={savingProduct}
+            loadError={productsLoadError}
+          />
+        )}
         {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
         {tab === "timekeeping" && <ComingSoon label="Timekeeping" />}
         {tab === "reports" && <ComingSoon label="Reports" />}
