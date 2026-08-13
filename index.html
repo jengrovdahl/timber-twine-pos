@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timber &amp; Twine — POS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Jost:wght@400;500;600;700&family=Cormorant+SC:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream: #F6F1E6;
+    --cream-2: #EFE7D6;
+    --forest: #33452F;
+    --forest-dark: #212E1D;
+    --rose: #B8677E;
+    --rose-dark: #9A4F63;
+    --gold: #B99143;
+    --walnut: #5B3A29;
+    --ink: #2A241E;
+    --ink-soft: #6b6053;
+    --line: #e2d8c3;
+    --white: #FFFDF9;
+    --radius: 10px;
+    --shadow: 0 2px 10px rgba(42,36,30,0.08);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--cream);
+    color:var(--ink);
+    font-family:'Jost', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #root{min-height:100vh;}
+  .label{
+    font-family:'Cormorant SC', serif;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    font-weight:600;
+    font-size:12.5px;
+    color:var(--forest);
+  }
+  button{font-family:inherit;cursor:pointer;}
+  button:focus-visible, input:focus-visible, select:focus-visible{
+    outline:2px solid var(--rose);
+    outline-offset:2px;
+  }
+  input, select{
+    font-family:inherit;
+    font-size:15px;
+    padding:9px 11px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--white);
+    color:var(--ink);
+  }
+
+  .site-header{
+    background:var(--forest);
+    color:var(--cream);
+    padding:18px 28px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    box-shadow:var(--shadow);
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand-word{
+    font-family:'Alex Brush', cursive;
+    font-size:34px;
+    color:var(--cream);
+    line-height:1;
+  }
+  .brand-tag{
+    font-family:'Cormorant SC', serif;
+    font-size:10.5px;
+    letter-spacing:0.22em;
+    color:var(--gold);
+    text-transform:uppercase;
+    margin-top:2px;
+  }
+  .wreath{width:34px;height:34px;flex-shrink:0;}
+
+  .tabs{
+    display:flex;
+    gap:4px;
+    padding:0 28px;
+    background:var(--forest-dark);
+    overflow-x:auto;
+  }
+  .tab{
+    background:transparent;
+    border:none;
+    color:#cfd7cb;
+    padding:12px 16px;
+    font-size:14px;
+    font-weight:500;
+    border-bottom:3px solid transparent;
+    white-space:nowrap;
+  }
+  .tab.active{color:var(--white); border-bottom-color:var(--gold);}
+  .tab.disabled{color:#6f7a6c; cursor:default;}
+
+  main{padding:24px 28px 60px; max-width:1180px; margin:0 auto;}
+
+  .layout{display:grid; grid-template-columns: 1.5fr 1fr; gap:22px;}
+  @media (max-width: 860px){ .layout{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:20px;
+  }
+  .panel h2{
+    margin:0 0 14px;
+    font-family:'Cormorant SC', serif;
+    font-weight:600;
+    font-size:18px;
+    letter-spacing:0.06em;
+    color:var(--forest);
+    text-transform:uppercase;
+    display:flex; align-items:center; gap:10px;
+  }
+  .panel h2::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--line);
+  }
+
+  .catalog-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(140px,1fr));
+    gap:12px;
+  }
+  .product-card{
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--cream);
+    padding:12px;
+    text-align:left;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .product-card:hover{ transform:translateY(-2px); box-shadow:var(--shadow); }
+  .product-name{font-weight:600; font-size:14.5px; margin-bottom:4px;}
+  .product-cat{font-size:11.5px; color:var(--ink-soft); margin-bottom:8px;}
+  .product-price{font-weight:600; color:var(--rose-dark);}
+  .stock-pill{
+    display:inline-block;
+    margin-top:6px;
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:99px;
+    background:var(--cream-2);
+    color:var(--ink-soft);
+  }
+  .stock-pill.low{background:#f6e2d9; color:#9a4a1f;}
+  .stock-pill.out{background:#f3dcdc; color:#a03030;}
+
+  .cart-line{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 0; border-bottom:1px dashed var(--line);
+    gap:8px;
+  }
+  .cart-line-name{font-size:14px; font-weight:500;}
+  .cart-line-sub{font-size:12px; color:var(--ink-soft);}
+  .qty-btn{
+    width:24px; height:24px; border-radius:6px; border:1px solid var(--line);
+    background:var(--white); font-size:14px; line-height:1;
+  }
+  .cart-empty{color:var(--ink-soft); font-size:14px; padding:14px 0;}
+  .totals-row{display:flex; justify-content:space-between; font-size:14px; padding:4px 0;}
+  .totals-row.grand{font-size:18px; font-weight:700; color:var(--forest); border-top:1px solid var(--line); margin-top:8px; padding-top:10px;}
+
+  .btn{
+    border:none; border-radius:8px; padding:11px 18px;
+    font-weight:600; font-size:14.5px;
+  }
+  .btn-primary{background:var(--rose); color:var(--white);}
+  .btn-primary:hover{background:var(--rose-dark);}
+  .btn-primary:disabled{background:#d8c8ce; color:#fff; cursor:not-allowed;}
+  .btn-outline{background:transparent; border:1px solid var(--forest); color:var(--forest);}
+  .btn-outline:hover{background:var(--forest); color:var(--white);}
+  .btn-full{width:100%; margin-top:14px;}
+
+  .field-row{display:flex; gap:10px; margin-bottom:10px;}
+  .field-row > div{flex:1; display:flex; flex-direction:column; gap:4px;}
+  .field-row label{font-size:12.5px; color:var(--ink-soft);}
+  .calc-result{
+    background:var(--cream-2);
+    border-radius:8px;
+    padding:12px 14px;
+    margin:12px 0;
+    font-size:14px;
+  }
+  .calc-result strong{color:var(--forest);}
+
+  .coming-soon{
+    text-align:center; padding:60px 20px; color:var(--ink-soft);
+  }
+  .coming-soon .wreath{width:52px;height:52px;margin:0 auto 14px;}
+
+  select{width:100%;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+/* ---------------------------------------------------------------
+   CONFIG — fill these in once the Turso database exists.
+   See schema.sql for the tables this app expects.
+   ------------------------------------------------------------- */
+const TURSO_URL = "REPLACE_WITH_YOUR_TURSO_DATABASE_URL";     // e.g. libsql://timber-twine-xxxx.turso.io
+const TURSO_AUTH_TOKEN = "REPLACE_WITH_YOUR_TURSO_AUTH_TOKEN";
+const MN_STATE_TAX = 0.06875; // Minnesota base rate; county add-on table to be wired in like Hen House
+
+let tursoClient = null;
+async function getTursoClient() {
+  if (tursoClient) return tursoClient;
+  if (TURSO_URL.startsWith("REPLACE_")) return null; // not configured yet
+  const { createClient } = await import("https://esm.sh/@libsql/client/web");
+  tursoClient = createClient({ url: TURSO_URL, authToken: TURSO_AUTH_TOKEN });
+  return tursoClient;
+}
+
+/* ---------------------------------------------------------------
+   Seed catalog — placeholder until the real product list is
+   loaded from Turso. Mirrors the "repeatable item" side of the
+   business (the one-off customs go through the Custom Order tab).
+   ------------------------------------------------------------- */
+const SEED_PRODUCTS = [
+  { id: "p1", name: "Rainbow Frog", category: "Crochet", price: 18, stock: 10 },
+  { id: "p2", name: "Forest Dino", category: "Crochet", price: 22, stock: 4 },
+  { id: "p3", name: "Raccoon Buddy", category: "Crochet", price: 24, stock: 3 },
+  { id: "p4", name: "Succulent Pal", category: "Crochet", price: 16, stock: 6 },
+  { id: "p5", name: "Engraved Coaster Set", category: "Wood Décor", price: 28, stock: 8 },
+  { id: "p6", name: "Custom Sign — Small", category: "Wood Décor", price: 35, stock: 5 },
+];
+
+/* ---------------------------------------------------------------
+   Wreath mark — a light abstraction of the Timber & Twine logo's
+   floral wreath, used sparingly (header + empty states only).
+   ------------------------------------------------------------- */
+function Wreath({ className }) {
+  return (
+    <svg className={className || "wreath"} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="42" stroke="#B99143" strokeWidth="1.5"/>
+      <g stroke="#B8677E" strokeWidth="2" strokeLinecap="round">
+        <path d="M25 68 Q35 58 25 48" />
+        <path d="M75 68 Q65 58 75 48" />
+      </g>
+      <g fill="#B8677E" opacity="0.85">
+        <circle cx="24" cy="47" r="4"/>
+        <circle cx="76" cy="47" r="4"/>
+      </g>
+      <g fill="#7C8A63" opacity="0.9">
+        <ellipse cx="30" cy="60" rx="5" ry="3" transform="rotate(-30 30 60)"/>
+        <ellipse cx="70" cy="60" rx="5" ry="3" transform="rotate(30 70 60)"/>
+      </g>
+    </svg>
+  );
+}
+
+function formatMoney(n) {
+  return `$${n.toFixed(2)}`;
+}
+
+function Header() {
+  return (
+    <header className="site-header">
+      <div className="brand">
+        <Wreath />
+        <div>
+          <div className="brand-word">Timber &amp; Twine</div>
+          <div className="brand-tag">Custom Handmade Goods · POS</div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+const TABS = [
+  { id: "checkout", label: "Checkout" },
+  { id: "custom", label: "Custom Order" },
+  { id: "catalog", label: "Catalog" },
+  { id: "inventory", label: "Inventory", disabled: true },
+  { id: "giftcards", label: "Gift Cards", disabled: true },
+  { id: "timekeeping", label: "Timekeeping", disabled: true },
+  { id: "reports", label: "Reports", disabled: true },
+];
+
+function TabBar({ active, onChange }) {
+  return (
+    <nav className="tabs">
+      {TABS.map(t => (
+        <button
+          key={t.id}
+          className={"tab" + (active === t.id ? " active" : "") + (t.disabled ? " disabled" : "")}
+          onClick={() => !t.disabled && onChange(t.id)}
+          title={t.disabled ? "Coming in a later update" : undefined}
+        >
+          {t.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function ProductGrid({ products, onAdd }) {
+  return (
+    <div className="catalog-grid">
+      {products.map(p => {
+        const low = p.stock > 0 && p.stock <= 3;
+        const out = p.stock <= 0;
+        return (
+          <button
+            key={p.id}
+            className="product-card"
+            onClick={() => !out && onAdd(p)}
+            disabled={out}
+            style={out ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+          >
+            <div className="product-name">{p.name}</div>
+            <div className="product-cat">{p.category}</div>
+            <div className="product-price">{formatMoney(p.price)}</div>
+            <span className={"stock-pill" + (out ? " out" : low ? " low" : "")}>
+              {out ? "Out of stock" : `${p.stock} in stock`}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut }) {
+  const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
+  const tax = subtotal * MN_STATE_TAX;
+  const total = subtotal + tax;
+
+  return (
+    <div className="panel">
+      <h2>Cart</h2>
+      {cart.length === 0 && <div className="cart-empty">No items yet — tap a product or add a custom order.</div>}
+      {cart.map(line => (
+        <div className="cart-line" key={line.key}>
+          <div>
+            <div className="cart-line-name">{line.name}</div>
+            <div className="cart-line-sub">{formatMoney(line.price)} each</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="qty-btn" onClick={() => onQty(line.key, -1)}>−</button>
+            <span>{line.qty}</span>
+            <button className="qty-btn" onClick={() => onQty(line.key, 1)}>+</button>
+            <button className="qty-btn" onClick={() => onRemove(line.key)} title="Remove">✕</button>
+          </div>
+        </div>
+      ))}
+      <div style={{ marginTop: 12 }}>
+        <div className="totals-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
+        <div className="totals-row"><span>Tax (MN {(MN_STATE_TAX*100).toFixed(3)}%)</span><span>{formatMoney(tax)}</span></div>
+        <div className="totals-row grand"><span>Total</span><span>{formatMoney(total)}</span></div>
+      </div>
+      <button
+        className="btn btn-primary btn-full"
+        disabled={cart.length === 0 || checkingOut}
+        onClick={() => onCheckout(subtotal, tax, total)}
+      >
+        {checkingOut ? "Recording sale…" : "Complete Sale"}
+      </button>
+    </div>
+  );
+}
+
+function CustomOrderPanel({ onAddToCart }) {
+  const [description, setDescription] = useState("");
+  const [hours, setHours] = useState("");
+  const [rate, setRate] = useState("15");
+  const [override, setOverride] = useState("");
+
+  const calculated = useMemo(() => {
+    const h = parseFloat(hours);
+    const r = parseFloat(rate);
+    if (isNaN(h) || isNaN(r)) return null;
+    return h * r;
+  }, [hours, rate]);
+
+  const finalPrice = override !== "" ? parseFloat(override) : calculated;
+
+  return (
+    <div className="panel">
+      <h2>Custom Order Pricing</h2>
+      <div className="field-row">
+        <div style={{ flex: 2 }}>
+          <label>Description</label>
+          <input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Custom crochet frog, purple" />
+        </div>
+      </div>
+      <div className="field-row">
+        <div>
+          <label>Hours spent</label>
+          <input type="number" min="0" step="0.25" value={hours} onChange={e => setHours(e.target.value)} placeholder="1.5" />
+        </div>
+        <div>
+          <label>Hourly rate ($)</label>
+          <input type="number" min="0" step="0.5" value={rate} onChange={e => setRate(e.target.value)} />
+        </div>
+      </div>
+
+      {calculated !== null && (
+        <div className="calc-result">
+          Calculated price: <strong>{formatMoney(calculated)}</strong>
+        </div>
+      )}
+
+      <div className="field-row">
+        <div>
+          <label>Override price ($) — optional</label>
+          <input type="number" min="0" step="0.5" value={override} onChange={e => setOverride(e.target.value)} placeholder="Leave blank to use calculated price" />
+        </div>
+      </div>
+
+      <button
+        className="btn btn-primary btn-full"
+        disabled={!description || finalPrice === null || isNaN(finalPrice)}
+        onClick={() => {
+          onAddToCart({
+            key: `custom-${Date.now()}`,
+            id: null,
+            name: description,
+            price: finalPrice,
+            qty: 1,
+          });
+          setDescription(""); setHours(""); setOverride("");
+        }}
+      >
+        Add to Cart — {finalPrice ? formatMoney(finalPrice) : "—"}
+      </button>
+    </div>
+  );
+}
+
+function ComingSoon({ label }) {
+  return (
+    <div className="panel coming-soon">
+      <Wreath />
+      <h2 style={{ border: "none" }}>{label}</h2>
+      <p>This section is queued for the next build pass, same as the rest of the Hen House feature set.</p>
+    </div>
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("checkout");
+  const [products] = useState(SEED_PRODUCTS);
+  const [cart, setCart] = useState([]);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [lastSale, setLastSale] = useState(null);
+
+  const addProduct = useCallback((p) => {
+    setCart(prev => {
+      const existing = prev.find(l => l.id === p.id);
+      if (existing) {
+        return prev.map(l => l.id === p.id ? { ...l, qty: l.qty + 1 } : l);
+      }
+      return [...prev, { key: p.id, id: p.id, name: p.name, price: p.price, qty: 1 }];
+    });
+  }, []);
+
+  const addCustom = useCallback((line) => {
+    setCart(prev => [...prev, line]);
+  }, []);
+
+  const changeQty = useCallback((key, delta) => {
+    setCart(prev => prev
+      .map(l => l.key === key ? { ...l, qty: l.qty + delta } : l)
+      .filter(l => l.qty > 0)
+    );
+  }, []);
+
+  const removeLine = useCallback((key) => {
+    setCart(prev => prev.filter(l => l.key !== key));
+  }, []);
+
+  const checkout = useCallback(async (subtotal, tax, total) => {
+    setCheckingOut(true);
+    try {
+      const client = await getTursoClient();
+      if (client) {
+        const saleId = `sale-${Date.now()}`;
+        await client.execute({
+          sql: "INSERT INTO sales (id, subtotal, tax, total) VALUES (?, ?, ?, ?)",
+          args: [saleId, subtotal, tax, total],
+        });
+        for (const line of cart) {
+          await client.execute({
+            sql: "INSERT INTO sale_items (id, sale_id, product_id, description, unit_price, quantity, line_total) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            args: [`${saleId}-${line.key}`, saleId, line.id, line.name, line.price, line.qty, line.price * line.qty],
+          });
+        }
+      } else {
+        console.warn("Turso not configured yet — sale not persisted.");
+      }
+      setLastSale({ subtotal, tax, total, count: cart.length });
+      setCart([]);
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't record the sale — check the console for details.");
+    } finally {
+      setCheckingOut(false);
+    }
+  }, [cart]);
+
+  return (
+    <React.Fragment>
+      <Header />
+      <TabBar active={tab} onChange={setTab} />
+      <main>
+        {tab === "checkout" && (
+          <div className="layout">
+            <div className="panel">
+              <h2>Catalog</h2>
+              <ProductGrid products={products} onAdd={addProduct} />
+            </div>
+            <CartPanel
+              cart={cart}
+              onQty={changeQty}
+              onRemove={removeLine}
+              onCheckout={checkout}
+              checkingOut={checkingOut}
+            />
+          </div>
+        )}
+
+        {tab === "custom" && (
+          <div className="layout">
+            <CustomOrderPanel onAddToCart={addCustom} />
+            <CartPanel
+              cart={cart}
+              onQty={changeQty}
+              onRemove={removeLine}
+              onCheckout={checkout}
+              checkingOut={checkingOut}
+            />
+          </div>
+        )}
+
+        {tab === "catalog" && (
+          <div className="panel">
+            <h2>Full Catalog</h2>
+            <ProductGrid products={products} onAdd={addProduct} />
+          </div>
+        )}
+
+        {tab === "inventory" && <ComingSoon label="Inventory Tracking" />}
+        {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
+        {tab === "timekeeping" && <ComingSoon label="Timekeeping" />}
+        {tab === "reports" && <ComingSoon label="Reports" />}
+
+        {lastSale && (
+          <div className="panel" style={{ marginTop: 18 }}>
+            <h2>Last Sale</h2>
+            <p>{lastSale.count} item(s) — total {formatMoney(lastSale.total)}</p>
+          </div>
+        )}
+      </main>
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
