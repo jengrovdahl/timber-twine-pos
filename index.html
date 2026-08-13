@@ -883,6 +883,7 @@ function App() {
   const [products, setProducts] = useState(SEED_PRODUCTS);
   const [productsLoadError, setProductsLoadError] = useState(null);
   const [savingProduct, setSavingProduct] = useState(false);
+  const [ratesStatus, setRatesStatus] = useState(null);
   const [cart, setCart] = useState([]);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -902,6 +903,21 @@ function App() {
       } catch (err) {
         console.error(err);
         if (!cancelled) setProductsLoadError(err.message || "couldn't reach the server");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${PROXY_URL}/rates-status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setRatesStatus(data);
+      } catch (err) {
+        console.error(err);
       }
     })();
     return () => { cancelled = true; };
@@ -996,6 +1012,11 @@ function App() {
   return (
     <React.Fragment>
       <Header />
+      {ratesStatus?.possiblyStale && (
+        <div style={{ background: "#f6e2d9", color: "#7a4620", padding: "10px 28px", fontSize: 13.5, textAlign: "center" }}>
+          Minnesota's sales tax notices page changed{ratesStatus.staleSince ? ` on ${new Date(ratesStatus.staleSince).toLocaleDateString()}` : ""} — worth double-checking the location rates in Checkout are still current.
+        </div>
+      )}
       <div className="app-body">
         <TabBar active={tab} onChange={setTab} />
         <main>
