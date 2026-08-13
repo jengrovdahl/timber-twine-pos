@@ -220,18 +220,8 @@ const { useState, useEffect, useMemo, useCallback } = React;
    CONFIG — fill these in once the Turso database exists.
    See schema.sql for the tables this app expects.
    ------------------------------------------------------------- */
-const TURSO_URL = "REPLACE_WITH_YOUR_TURSO_DATABASE_URL";     // e.g. libsql://timber-twine-xxxx.turso.io
-const TURSO_AUTH_TOKEN = "REPLACE_WITH_YOUR_TURSO_AUTH_TOKEN";
+const PROXY_URL = "https://timber-twine-proxy.jengrovdahl.workers.dev";
 const MN_STATE_TAX = 0.06875; // Minnesota base rate; county add-on table to be wired in like Hen House
-
-let tursoClient = null;
-async function getTursoClient() {
-  if (tursoClient) return tursoClient;
-  if (TURSO_URL.startsWith("REPLACE_")) return null; // not configured yet
-  const { createClient } = await import("https://esm.sh/@libsql/client/web");
-  tursoClient = createClient({ url: TURSO_URL, authToken: TURSO_AUTH_TOKEN });
-  return tursoClient;
-}
 
 /* ---------------------------------------------------------------
    Seed catalog — placeholder until the real product list is
@@ -495,21 +485,14 @@ function App() {
   const checkout = useCallback(async (subtotal, tax, total) => {
     setCheckingOut(true);
     try {
-      const client = await getTursoClient();
-      if (client) {
-        const saleId = `sale-${Date.now()}`;
-        await client.execute({
-          sql: "INSERT INTO sales (id, subtotal, tax, total) VALUES (?, ?, ?, ?)",
-          args: [saleId, subtotal, tax, total],
-        });
-        for (const line of cart) {
-          await client.execute({
-            sql: "INSERT INTO sale_items (id, sale_id, product_id, description, unit_price, quantity, line_total) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            args: [`${saleId}-${line.key}`, saleId, line.id, line.name, line.price, line.qty, line.price * line.qty],
-          });
-        }
-      } else {
-        console.warn("Turso not configured yet — sale not persisted.");
+      const res = await fetch(PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subtotal, tax, total, items: cart }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `Proxy returned ${res.status}`);
       }
       setLastSale({ subtotal, tax, total, count: cart.length });
       setCart([]);
