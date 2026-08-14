@@ -455,6 +455,7 @@ const TABS = [
   { id: "custom", label: "Custom Order" },
   { id: "events", label: "Events" },
   { id: "creators", label: "Creators" },
+  { id: "paymentTypes", label: "Payment Types" },
   { id: "giftcards", label: "Gift Cards", disabled: true },
   { id: "timekeeping", label: "Time", disabled: true },
   { id: "reports", label: "Reports", disabled: true },
@@ -688,12 +689,102 @@ function CreatorPicker({ creators, selectedCreatorId, onSelect, onAddCreator }) 
   );
 }
 
-function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange, events, selectedEventId, onEventChange, onAddEvent, creators, selectedCreatorId, onCreatorChange, onAddCreator }) {
+/* ---------------------------------------------------------------
+   Payment type popup form and picker dropdown — mirrors Event and
+   Creator pickers, plus a "tax included in price?" toggle since that
+   flag drives the actual checkout math (see CartPanel below).
+   ------------------------------------------------------------- */
+function PaymentTypeFormPopup({ onCancel, onSave }) {
+  const [name, setName] = useState("");
+  const [taxInclusive, setTaxInclusive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    if (!name.trim()) { setError("Name is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({ name: name.trim(), taxInclusive });
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't save the payment type — try again.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal-box" onClick={e => e.stopPropagation()}>
+        <h2>Add New Payment Type</h2>
+        <div className="field-row">
+          <div>
+            <label>Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Zelle" autoFocus />
+          </div>
+        </div>
+        <div className="field-row">
+          <div style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: "var(--ink)" }}>
+              <input type="checkbox" checked={taxInclusive} onChange={e => setTaxInclusive(e.target.checked)} style={{ width: "auto" }} />
+              Tax is included in the price (like cash) — uncheck if tax should be added on top (like card)
+            </label>
+          </div>
+        </div>
+        {error && <div className="cart-line-sub" style={{ color: "#a03030" }}>{error}</div>}
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button className="btn btn-primary" disabled={saving} onClick={submit}>
+            {saving ? "Saving…" : "Add Payment Type"}
+          </button>
+          <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentTypePicker({ paymentTypes, selectedName, onSelect, onAddPaymentType }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <div>
+      <label>Payment</label>
+      <select
+        value={selectedName}
+        onChange={e => {
+          if (e.target.value === "__add_new__") {
+            setShowForm(true);
+          } else {
+            onSelect(e.target.value);
+          }
+        }}
+      >
+        {paymentTypes.map(pt => (
+          <option key={pt.id} value={pt.name}>{pt.name} ({pt.taxInclusive ? "tax included" : "tax added"})</option>
+        ))}
+        <option value="__add_new__">+ Add New Payment Type…</option>
+      </select>
+      {showForm && (
+        <PaymentTypeFormPopup
+          onCancel={() => setShowForm(false)}
+          onSave={async (data) => {
+            await onAddPaymentType(data);
+            onSelect(data.name);
+            setShowForm(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange, events, selectedEventId, onEventChange, onAddEvent, creators, selectedCreatorId, onCreatorChange, onAddCreator, paymentTypes, onAddPaymentType }) {
   const rate = LOCATIONS.find(l => l.name === location)?.rate ?? LOCATIONS[0].rate;
   const rawSubtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
+  const isTaxInclusive = paymentTypes.find(pt => pt.name === paymentMethod)?.taxInclusive ?? true;
 
   let subtotal, tax, total;
-  if (paymentMethod === "cash") {
+  if (isTaxInclusive) {
     total = rawSubtotal;
     subtotal = rawSubtotal / (1 + rate);
     tax = total - subtotal;
@@ -747,13 +838,7 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
             ))}
           </select>
         </div>
-        <div>
-          <label>Payment</label>
-          <select value={paymentMethod} onChange={e => onPaymentMethodChange(e.target.value)}>
-            <option value="card">Card (tax added)</option>
-            <option value="cash">Cash (tax included)</option>
-          </select>
-        </div>
+        <PaymentTypePicker paymentTypes={paymentTypes} selectedName={paymentMethod} onSelect={onPaymentMethodChange} onAddPaymentType={onAddPaymentType} />
         <div>
           <label>Sale Date</label>
           <input type="date" value={saleDate} onChange={e => onSaleDateChange(e.target.value)} />
@@ -1021,7 +1106,7 @@ function ProductsPanel({ products, onSave, onDelete, saving, loadError }) {
    Sales page — history, summary stats, date filter, edit/delete.
    Mirrors Hen House's Sales History.
    ------------------------------------------------------------- */
-function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent, creators, onAddCreator }) {
+function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent, creators, onAddCreator, paymentTypes, onAddPaymentType }) {
   const [paymentMethod, setPaymentMethod] = useState(sale.paymentMethod || "card");
   const [location, setLocation] = useState(sale.location || LOCATIONS[0].name);
   const [total, setTotal] = useState(String(sale.total));
@@ -1039,13 +1124,7 @@ function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent, crea
             {LOCATIONS.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
         </div>
-        <div>
-          <label>Payment</label>
-          <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-            <option value="card">Card</option>
-            <option value="cash">Cash</option>
-          </select>
-        </div>
+        <PaymentTypePicker paymentTypes={paymentTypes} selectedName={paymentMethod} onSelect={setPaymentMethod} onAddPaymentType={onAddPaymentType} />
         <div>
           <label>Total ($)</label>
           <input type="number" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} />
@@ -1112,6 +1191,38 @@ function CreatorsPanel({ creators, loadError, onAddCreator }) {
   );
 }
 
+function PaymentTypesPanel({ paymentTypes, loadError, onAddPaymentType }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <div>
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Payment Types</h2>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Add Payment Type</button>
+        </div>
+        {loadError && <div className="cart-line-sub" style={{ marginBottom: 10 }}>Couldn't load payment types — {loadError}</div>}
+        {paymentTypes.length === 0 && !loadError && <div className="cart-empty">No payment types yet — add your first one.</div>}
+        {paymentTypes.map(pt => (
+          <div className="cart-line" key={pt.id}>
+            <div>
+              <div className="cart-line-name">{pt.name}</div>
+              <div className="cart-line-sub">{pt.taxInclusive ? "Tax included in price" : "Tax added on top"}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <PaymentTypeFormPopup
+          onCancel={() => setShowForm(false)}
+          onSave={async (data) => { await onAddPaymentType(data); setShowForm(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
 function EventsPanel({ events, loadError, onAddEvent }) {
   const [showForm, setShowForm] = useState(false);
   const realEvents = events.filter(ev => ev.id !== "event-none");
@@ -1147,7 +1258,7 @@ function EventsPanel({ events, loadError, onAddEvent }) {
   );
 }
 
-function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
+function SalesPanel({ events, onAddEvent, creators, onAddCreator, paymentTypes, onAddPaymentType }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -1212,11 +1323,15 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
     }
   };
 
-  // Cash sales are priced tax-inclusive, so the round sticker amount lives
-  // in `total`. Card sales have tax added on top, so the round amount lives
-  // in `subtotal` instead (total = subtotal + tax, which isn't round).
-  // Total Sales always uses whichever field holds that clean number.
-  const totalSales = sales.reduce((s, r) => s + (r.paymentMethod === "cash" ? r.total : r.subtotal), 0);
+  // Tax-inclusive payment types (cash, venmo, ...) are priced with the
+  // round sticker amount in `total`. Tax-added types (card, ...) have the
+  // round amount in `subtotal` instead (total = subtotal + tax, which isn't
+  // round). Total Sales always uses whichever field holds that clean number,
+  // looked up per sale via its payment type's taxInclusive flag.
+  const totalSales = sales.reduce((s, r) => {
+    const isTaxInclusive = paymentTypes.find(pt => pt.name === r.paymentMethod)?.taxInclusive ?? true;
+    return s + (isTaxInclusive ? r.total : r.subtotal);
+  }, 0);
   const txCount = sales.length;
   const avgSale = txCount ? totalSales / txCount : 0;
 
@@ -1285,7 +1400,7 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
       </div>
 
       {editingSale && (
-        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} events={events} onAddEvent={onAddEvent} creators={creators} onAddCreator={onAddCreator} />
+        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} events={events} onAddEvent={onAddEvent} creators={creators} onAddCreator={onAddCreator} paymentTypes={paymentTypes} onAddPaymentType={onAddPaymentType} />
       )}
     </div>
   );
@@ -1311,6 +1426,12 @@ function App() {
   const [creators, setCreators] = useState([{ id: "creator-alison", name: "Alison" }]);
   const [creatorsLoadError, setCreatorsLoadError] = useState(null);
   const [selectedCreatorId, setSelectedCreatorId] = useState("creator-alison");
+  const [paymentTypes, setPaymentTypes] = useState([
+    { id: "pt-card", name: "card", taxInclusive: false },
+    { id: "pt-cash", name: "cash", taxInclusive: true },
+    { id: "pt-venmo", name: "venmo", taxInclusive: true },
+  ]);
+  const [paymentTypesLoadError, setPaymentTypesLoadError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1417,6 +1538,43 @@ function App() {
       return exists ? prev.map(c => c.id === newCreator.id ? newCreator : c) : [...prev, newCreator];
     });
     return newCreator.id;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${PROXY_URL}/payment-types`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.paymentTypes) && data.paymentTypes.length > 0) {
+          setPaymentTypes(data.paymentTypes);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setPaymentTypesLoadError(err.message || "couldn't reach the server");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const addPaymentType = useCallback(async (data) => {
+    const res = await fetch(`${PROXY_URL}/payment-types`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error || `Server returned ${res.status}`);
+    }
+    const saved = await res.json();
+    const newType = { id: saved.id || data.id, name: data.name, taxInclusive: data.taxInclusive !== false };
+    setPaymentTypes(prev => {
+      const exists = prev.some(pt => pt.id === newType.id);
+      return exists ? prev.map(pt => pt.id === newType.id ? newType : pt) : [...prev, newType];
+    });
+    return newType.id;
   }, []);
 
   const saveProduct = useCallback(async (data) => {
@@ -1614,6 +1772,8 @@ function App() {
                 selectedCreatorId={selectedCreatorId}
                 onCreatorChange={setSelectedCreatorId}
                 onAddCreator={addCreator}
+                paymentTypes={paymentTypes}
+                onAddPaymentType={addPaymentType}
               />
             </div>
           )}
@@ -1642,6 +1802,8 @@ function App() {
                 selectedCreatorId={selectedCreatorId}
                 onCreatorChange={setSelectedCreatorId}
                 onAddCreator={addCreator}
+                paymentTypes={paymentTypes}
+                onAddPaymentType={addPaymentType}
               />
             </div>
           )}
@@ -1657,7 +1819,7 @@ function App() {
           )}
 
           {tab === "sales" && (
-            <SalesPanel events={events} onAddEvent={addEvent} creators={creators} onAddCreator={addCreator} />
+            <SalesPanel events={events} onAddEvent={addEvent} creators={creators} onAddCreator={addCreator} paymentTypes={paymentTypes} onAddPaymentType={addPaymentType} />
           )}
 
           {tab === "events" && (
@@ -1666,6 +1828,10 @@ function App() {
 
           {tab === "creators" && (
             <CreatorsPanel creators={creators} loadError={creatorsLoadError} onAddCreator={addCreator} />
+          )}
+
+          {tab === "paymentTypes" && (
+            <PaymentTypesPanel paymentTypes={paymentTypes} loadError={paymentTypesLoadError} onAddPaymentType={addPaymentType} />
           )}
 
           {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
