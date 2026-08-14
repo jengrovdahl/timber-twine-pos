@@ -427,6 +427,7 @@ const TABS = [
   { id: "sales", label: "Sales" },
   { id: "custom", label: "Custom Order" },
   { id: "events", label: "Events" },
+  { id: "creators", label: "Creators" },
   { id: "giftcards", label: "Gift Cards", disabled: true },
   { id: "timekeeping", label: "Time", disabled: true },
   { id: "reports", label: "Reports", disabled: true },
@@ -581,7 +582,86 @@ function EventPicker({ events, selectedEventId, onSelect, onAddEvent }) {
   );
 }
 
-function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange, events, selectedEventId, onEventChange, onAddEvent }) {
+/* ---------------------------------------------------------------
+   Creator popup form and picker dropdown — mirrors the Event picker
+   but simpler (name only, no location/date).
+   ------------------------------------------------------------- */
+function CreatorFormPopup({ onCancel, onSave }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    if (!name.trim()) { setError("Name is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({ name: name.trim() });
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't save the creator — try again.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal-box" onClick={e => e.stopPropagation()}>
+        <h2>Add New Creator</h2>
+        <div className="field-row">
+          <div>
+            <label>Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Jamie" autoFocus />
+          </div>
+        </div>
+        {error && <div className="cart-line-sub" style={{ color: "#a03030" }}>{error}</div>}
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button className="btn btn-primary" disabled={saving} onClick={submit}>
+            {saving ? "Saving…" : "Add Creator"}
+          </button>
+          <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreatorPicker({ creators, selectedCreatorId, onSelect, onAddCreator }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <div>
+      <label>Creator</label>
+      <select
+        value={selectedCreatorId}
+        onChange={e => {
+          if (e.target.value === "__add_new__") {
+            setShowForm(true);
+          } else {
+            onSelect(e.target.value);
+          }
+        }}
+      >
+        {creators.map(c => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+        <option value="__add_new__">+ Add New Creator…</option>
+      </select>
+      {showForm && (
+        <CreatorFormPopup
+          onCancel={() => setShowForm(false)}
+          onSave={async (data) => {
+            const newId = await onAddCreator(data);
+            onSelect(newId);
+            setShowForm(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange, events, selectedEventId, onEventChange, onAddEvent, creators, selectedCreatorId, onCreatorChange, onAddCreator }) {
   const rate = LOCATIONS.find(l => l.name === location)?.rate ?? LOCATIONS[0].rate;
   const rawSubtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
 
@@ -652,6 +732,7 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
           <input type="date" value={saleDate} onChange={e => onSaleDateChange(e.target.value)} />
         </div>
         <EventPicker events={events} selectedEventId={selectedEventId} onSelect={onEventChange} onAddEvent={onAddEvent} />
+        <CreatorPicker creators={creators} selectedCreatorId={selectedCreatorId} onSelect={onCreatorChange} onAddCreator={onAddCreator} />
       </div>
       {saleDate !== todayLocalDateString() && (
         <div className="cart-line-sub" style={{ marginTop: -6, marginBottom: 10 }}>Recording this sale as {new Date(saleDate + "T00:00:00").toLocaleDateString()} instead of today.</div>
@@ -913,12 +994,13 @@ function ProductsPanel({ products, onSave, onDelete, saving, loadError }) {
    Sales page — history, summary stats, date filter, edit/delete.
    Mirrors Hen House's Sales History.
    ------------------------------------------------------------- */
-function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent }) {
+function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent, creators, onAddCreator }) {
   const [paymentMethod, setPaymentMethod] = useState(sale.paymentMethod || "card");
   const [location, setLocation] = useState(sale.location || LOCATIONS[0].name);
   const [total, setTotal] = useState(String(sale.total));
   const [saleDate, setSaleDate] = useState(localDateInputValue(parseUtcTimestamp(sale.createdAt)));
   const [eventId, setEventId] = useState(sale.eventId || "event-none");
+  const [creatorId, setCreatorId] = useState(sale.creatorId || "creator-alison");
 
   return (
     <div className="panel" style={{ marginTop: 18 }}>
@@ -946,6 +1028,7 @@ function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent }) {
           <input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
         </div>
         <EventPicker events={events} selectedEventId={eventId} onSelect={setEventId} onAddEvent={onAddEvent} />
+        <CreatorPicker creators={creators} selectedCreatorId={creatorId} onSelect={setCreatorId} onAddCreator={onAddCreator} />
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         <button
@@ -960,12 +1043,44 @@ function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent }) {
             location,
             createdAt: localDateTimeToUtcSqlite(saleDate, parseUtcTimestamp(sale.createdAt)),
             eventId,
+            creatorId,
           })}
         >
           {saving ? "Saving…" : "Save Changes"}
         </button>
         <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
       </div>
+    </div>
+  );
+}
+
+function CreatorsPanel({ creators, loadError, onAddCreator }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <div>
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Creators</h2>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Add Creator</button>
+        </div>
+        {loadError && <div className="cart-line-sub" style={{ marginBottom: 10 }}>Couldn't load creators — {loadError}</div>}
+        {creators.length === 0 && !loadError && <div className="cart-empty">No creators yet — add your first one.</div>}
+        {creators.map(c => (
+          <div className="cart-line" key={c.id}>
+            <div>
+              <div className="cart-line-name">{c.name}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <CreatorFormPopup
+          onCancel={() => setShowForm(false)}
+          onSave={async (data) => { await onAddCreator(data); setShowForm(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -1005,13 +1120,14 @@ function EventsPanel({ events, loadError, onAddEvent }) {
   );
 }
 
-function SalesPanel({ events, onAddEvent }) {
+function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [from, setFrom] = useState(todayLocalDateString());
   const [to, setTo] = useState(todayLocalDateString());
   const [eventFilter, setEventFilter] = useState("");
+  const [creatorFilter, setCreatorFilter] = useState("");
   const [editingSale, setEditingSale] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -1023,6 +1139,7 @@ function SalesPanel({ events, onAddEvent }) {
       if (from) params.set("fromUtc", new Date(from + "T00:00:00").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
       if (to) params.set("toUtc", new Date(to + "T23:59:59.999").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
       if (eventFilter) params.set("eventId", eventFilter);
+      if (creatorFilter) params.set("creatorId", creatorFilter);
       const res = await fetch(`${PROXY_URL}/sales?${params.toString()}`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = await res.json();
@@ -1033,7 +1150,7 @@ function SalesPanel({ events, onAddEvent }) {
     } finally {
       setLoading(false);
     }
-  }, [from, to, eventFilter]);
+  }, [from, to, eventFilter, creatorFilter]);
 
   useEffect(() => { loadSales(); }, [loadSales]);
 
@@ -1095,8 +1212,17 @@ function SalesPanel({ events, onAddEvent }) {
               ))}
             </select>
           </div>
+          <div>
+            <label>Creator</label>
+            <select value={creatorFilter} onChange={e => setCreatorFilter(e.target.value)}>
+              <option value="">All Creators</option>
+              {creators.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); setEventFilter(""); }}>Clear</button>
+            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); setEventFilter(""); setCreatorFilter(""); }}>Clear</button>
           </div>
         </div>
         <div className="stat-grid">
@@ -1118,7 +1244,7 @@ function SalesPanel({ events, onAddEvent }) {
                 {parseUtcTimestamp(s.createdAt).toLocaleDateString()} {parseUtcTimestamp(s.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — {(s.items || []).map(i => `${i.description}×${i.quantity}`).join(", ") || "(no items on file)"}
               </div>
               <div className="cart-line-sub">
-                {events.find(ev => ev.id === s.eventId)?.name || "Non-Event Sales"} · {s.location || "—"} · {s.paymentMethod || "—"} · Sub {formatMoney(s.subtotal)} · Tax {formatMoney(s.tax)} · Total {formatMoney(s.total)}
+                {events.find(ev => ev.id === s.eventId)?.name || "Non-Event Sales"} · {creators.find(c => c.id === s.creatorId)?.name || "Alison"} · {s.location || "—"} · {s.paymentMethod || "—"} · Sub {formatMoney(s.subtotal)} · Tax {formatMoney(s.tax)} · Total {formatMoney(s.total)}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
@@ -1130,7 +1256,7 @@ function SalesPanel({ events, onAddEvent }) {
       </div>
 
       {editingSale && (
-        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} events={events} onAddEvent={onAddEvent} />
+        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} events={events} onAddEvent={onAddEvent} creators={creators} onAddCreator={onAddCreator} />
       )}
     </div>
   );
@@ -1152,6 +1278,9 @@ function App() {
   const [events, setEvents] = useState([{ id: "event-none", name: "Non-Event Sales", location: null, eventDate: null }]);
   const [eventsLoadError, setEventsLoadError] = useState(null);
   const [selectedEventId, setSelectedEventId] = useState("event-none");
+  const [creators, setCreators] = useState([{ id: "creator-alison", name: "Alison" }]);
+  const [creatorsLoadError, setCreatorsLoadError] = useState(null);
+  const [selectedCreatorId, setSelectedCreatorId] = useState("creator-alison");
 
   useEffect(() => {
     let cancelled = false;
@@ -1221,6 +1350,43 @@ function App() {
       return exists ? prev.map(ev => ev.id === newEvent.id ? newEvent : ev) : [...prev, newEvent];
     });
     return newEvent.id;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${PROXY_URL}/creators`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.creators) && data.creators.length > 0) {
+          setCreators(data.creators);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setCreatorsLoadError(err.message || "couldn't reach the server");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const addCreator = useCallback(async (data) => {
+    const res = await fetch(`${PROXY_URL}/creators`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error || `Server returned ${res.status}`);
+    }
+    const saved = await res.json();
+    const newCreator = { id: saved.id || data.id, name: data.name };
+    setCreators(prev => {
+      const exists = prev.some(c => c.id === newCreator.id);
+      return exists ? prev.map(c => c.id === newCreator.id ? newCreator : c) : [...prev, newCreator];
+    });
+    return newCreator.id;
   }, []);
 
   const saveProduct = useCallback(async (data) => {
@@ -1299,7 +1465,7 @@ function App() {
       const res = await fetch(`${PROXY_URL}/sale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart, createdAt, eventId: selectedEventId }),
+        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart, createdAt, eventId: selectedEventId, creatorId: selectedCreatorId }),
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
@@ -1314,7 +1480,7 @@ function App() {
     } finally {
       setCheckingOut(false);
     }
-  }, [cart, selectedEventId]);
+  }, [cart, selectedEventId, selectedCreatorId]);
 
   return (
     <React.Fragment>
@@ -1360,6 +1526,10 @@ function App() {
                 selectedEventId={selectedEventId}
                 onEventChange={setSelectedEventId}
                 onAddEvent={addEvent}
+                creators={creators}
+                selectedCreatorId={selectedCreatorId}
+                onCreatorChange={setSelectedCreatorId}
+                onAddCreator={addCreator}
               />
             </div>
           )}
@@ -1384,6 +1554,10 @@ function App() {
                 selectedEventId={selectedEventId}
                 onEventChange={setSelectedEventId}
                 onAddEvent={addEvent}
+                creators={creators}
+                selectedCreatorId={selectedCreatorId}
+                onCreatorChange={setSelectedCreatorId}
+                onAddCreator={addCreator}
               />
             </div>
           )}
@@ -1398,10 +1572,16 @@ function App() {
             />
           )}
 
-          {tab === "sales" && <SalesPanel events={events} onAddEvent={addEvent} />}
+          {tab === "sales" && (
+            <SalesPanel events={events} onAddEvent={addEvent} creators={creators} onAddCreator={addCreator} />
+          )}
 
           {tab === "events" && (
             <EventsPanel events={events} loadError={eventsLoadError} onAddEvent={addEvent} />
+          )}
+
+          {tab === "creators" && (
+            <CreatorsPanel creators={creators} loadError={creatorsLoadError} onAddCreator={addCreator} />
           )}
 
           {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
