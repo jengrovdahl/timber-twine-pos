@@ -285,6 +285,21 @@
   .coming-soon .wreath{width:52px;height:52px;margin:0 auto 14px;}
 
   select{width:100%;}
+
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(42,36,30,0.45);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px; z-index:100;
+  }
+  .modal-box{
+    background:var(--white); border-radius:var(--radius);
+    padding:22px; max-width:420px; width:100%;
+    box-shadow:0 10px 30px rgba(0,0,0,0.25);
+  }
+  .modal-box h2{
+    margin:0 0 14px; font-family:'Cormorant SC', serif; font-weight:600;
+    font-size:18px; letter-spacing:0.06em; color:var(--forest); text-transform:uppercase;
+  }
 </style>
 </head>
 <body>
@@ -411,6 +426,7 @@ const TABS = [
   { id: "products", label: "Products" },
   { id: "sales", label: "Sales" },
   { id: "custom", label: "Custom Order" },
+  { id: "events", label: "Events" },
   { id: "giftcards", label: "Gift Cards", disabled: true },
   { id: "timekeeping", label: "Time", disabled: true },
   { id: "reports", label: "Reports", disabled: true },
@@ -473,7 +489,99 @@ function ProductGrid({ products, onAdd, onEdit, onDelete }) {
   );
 }
 
-function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange }) {
+/* ---------------------------------------------------------------
+   Event popup form and picker dropdown — used in the POS cart, the
+   Sales edit form, and the Events tab, so a new event can be added
+   inline without leaving whatever screen you're on.
+   ------------------------------------------------------------- */
+function EventFormPopup({ onCancel, onSave }) {
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const [eventDate, setEventDate] = useState(todayLocalDateString());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    if (!name.trim()) { setError("Name is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({ name: name.trim(), location: location.trim(), eventDate });
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't save the event — try again.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal-box" onClick={e => e.stopPropagation()}>
+        <h2>Add New Event</h2>
+        <div className="field-row">
+          <div>
+            <label>Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Fall Craft Fair" autoFocus />
+          </div>
+        </div>
+        <div className="field-row">
+          <div>
+            <label>Location</label>
+            <input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Community Center" />
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} />
+          </div>
+        </div>
+        {error && <div className="cart-line-sub" style={{ color: "#a03030" }}>{error}</div>}
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button className="btn btn-primary" disabled={saving} onClick={submit}>
+            {saving ? "Saving…" : "Add Event"}
+          </button>
+          <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventPicker({ events, selectedEventId, onSelect, onAddEvent }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <div>
+      <label>Event</label>
+      <select
+        value={selectedEventId}
+        onChange={e => {
+          if (e.target.value === "__add_new__") {
+            setShowForm(true);
+          } else {
+            onSelect(e.target.value);
+          }
+        }}
+      >
+        {events.map(ev => (
+          <option key={ev.id} value={ev.id}>{ev.name}</option>
+        ))}
+        <option value="__add_new__">+ Add New Event…</option>
+      </select>
+      {showForm && (
+        <EventFormPopup
+          onCancel={() => setShowForm(false)}
+          onSave={async (data) => {
+            const newId = await onAddEvent(data);
+            onSelect(newId);
+            setShowForm(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange, events, selectedEventId, onEventChange, onAddEvent }) {
   const rate = LOCATIONS.find(l => l.name === location)?.rate ?? LOCATIONS[0].rate;
   const rawSubtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
 
@@ -543,6 +651,7 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
           <label>Sale Date</label>
           <input type="date" value={saleDate} onChange={e => onSaleDateChange(e.target.value)} />
         </div>
+        <EventPicker events={events} selectedEventId={selectedEventId} onSelect={onEventChange} onAddEvent={onAddEvent} />
       </div>
       {saleDate !== todayLocalDateString() && (
         <div className="cart-line-sub" style={{ marginTop: -6, marginBottom: 10 }}>Recording this sale as {new Date(saleDate + "T00:00:00").toLocaleDateString()} instead of today.</div>
@@ -804,11 +913,12 @@ function ProductsPanel({ products, onSave, onDelete, saving, loadError }) {
    Sales page — history, summary stats, date filter, edit/delete.
    Mirrors Hen House's Sales History.
    ------------------------------------------------------------- */
-function SaleEditForm({ sale, onSave, onCancel, saving }) {
+function SaleEditForm({ sale, onSave, onCancel, saving, events, onAddEvent }) {
   const [paymentMethod, setPaymentMethod] = useState(sale.paymentMethod || "card");
   const [location, setLocation] = useState(sale.location || LOCATIONS[0].name);
   const [total, setTotal] = useState(String(sale.total));
   const [saleDate, setSaleDate] = useState(localDateInputValue(parseUtcTimestamp(sale.createdAt)));
+  const [eventId, setEventId] = useState(sale.eventId || "event-none");
 
   return (
     <div className="panel" style={{ marginTop: 18 }}>
@@ -835,6 +945,7 @@ function SaleEditForm({ sale, onSave, onCancel, saving }) {
           <label>Sale Date</label>
           <input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
         </div>
+        <EventPicker events={events} selectedEventId={eventId} onSelect={setEventId} onAddEvent={onAddEvent} />
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         <button
@@ -848,6 +959,7 @@ function SaleEditForm({ sale, onSave, onCancel, saving }) {
             paymentMethod,
             location,
             createdAt: localDateTimeToUtcSqlite(saleDate, parseUtcTimestamp(sale.createdAt)),
+            eventId,
           })}
         >
           {saving ? "Saving…" : "Save Changes"}
@@ -858,12 +970,48 @@ function SaleEditForm({ sale, onSave, onCancel, saving }) {
   );
 }
 
-function SalesPanel() {
+function EventsPanel({ events, loadError, onAddEvent }) {
+  const [showForm, setShowForm] = useState(false);
+  const realEvents = events.filter(ev => ev.id !== "event-none");
+
+  return (
+    <div>
+      <div className="panel">
+        <div className="panel-head">
+          <h2>Events</h2>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Add Event</button>
+        </div>
+        {loadError && <div className="cart-line-sub" style={{ marginBottom: 10 }}>Couldn't load events — {loadError}</div>}
+        {realEvents.length === 0 && !loadError && <div className="cart-empty">No events yet — add your first one.</div>}
+        {realEvents.map(ev => (
+          <div className="cart-line" key={ev.id}>
+            <div>
+              <div className="cart-line-name">{ev.name}</div>
+              <div className="cart-line-sub">
+                {ev.location || "No location set"} · {ev.eventDate ? new Date(ev.eventDate + "T00:00:00").toLocaleDateString() : "No date set"}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <EventFormPopup
+          onCancel={() => setShowForm(false)}
+          onSave={async (data) => { await onAddEvent(data); setShowForm(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SalesPanel({ events, onAddEvent }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [from, setFrom] = useState(todayLocalDateString());
   const [to, setTo] = useState(todayLocalDateString());
+  const [eventFilter, setEventFilter] = useState("");
   const [editingSale, setEditingSale] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -874,6 +1022,7 @@ function SalesPanel() {
       const params = new URLSearchParams();
       if (from) params.set("fromUtc", new Date(from + "T00:00:00").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
       if (to) params.set("toUtc", new Date(to + "T23:59:59.999").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
+      if (eventFilter) params.set("eventId", eventFilter);
       const res = await fetch(`${PROXY_URL}/sales?${params.toString()}`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = await res.json();
@@ -884,7 +1033,7 @@ function SalesPanel() {
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, eventFilter]);
 
   useEffect(() => { loadSales(); }, [loadSales]);
 
@@ -937,8 +1086,17 @@ function SalesPanel() {
             <label>To</label>
             <input type="date" value={to} onChange={e => setTo(e.target.value)} />
           </div>
+          <div>
+            <label>Event</label>
+            <select value={eventFilter} onChange={e => setEventFilter(e.target.value)}>
+              <option value="">All Events</option>
+              {events.map(ev => (
+                <option key={ev.id} value={ev.id}>{ev.name}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); }}>Clear</button>
+            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); setEventFilter(""); }}>Clear</button>
           </div>
         </div>
         <div className="stat-grid">
@@ -960,7 +1118,7 @@ function SalesPanel() {
                 {parseUtcTimestamp(s.createdAt).toLocaleDateString()} {parseUtcTimestamp(s.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — {(s.items || []).map(i => `${i.description}×${i.quantity}`).join(", ") || "(no items on file)"}
               </div>
               <div className="cart-line-sub">
-                {s.location || "—"} · {s.paymentMethod || "—"} · Sub {formatMoney(s.subtotal)} · Tax {formatMoney(s.tax)} · Total {formatMoney(s.total)}
+                {events.find(ev => ev.id === s.eventId)?.name || "Non-Event Sales"} · {s.location || "—"} · {s.paymentMethod || "—"} · Sub {formatMoney(s.subtotal)} · Tax {formatMoney(s.tax)} · Total {formatMoney(s.total)}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
@@ -972,7 +1130,7 @@ function SalesPanel() {
       </div>
 
       {editingSale && (
-        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} />
+        <SaleEditForm sale={editingSale} saving={saving} onSave={saveSaleEdit} onCancel={() => setEditingSale(null)} events={events} onAddEvent={onAddEvent} />
       )}
     </div>
   );
@@ -990,6 +1148,9 @@ function App() {
   const [location, setLocation] = useState(LOCATIONS[0].name);
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [saleDate, setSaleDate] = useState(todayLocalDateString());
+  const [events, setEvents] = useState([{ id: "event-none", name: "Non-Event Sales", location: null, eventDate: null }]);
+  const [eventsLoadError, setEventsLoadError] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState("event-none");
 
   useEffect(() => {
     let cancelled = false;
@@ -1022,6 +1183,43 @@ function App() {
       }
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${PROXY_URL}/events`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.events) && data.events.length > 0) {
+          setEvents(data.events);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setEventsLoadError(err.message || "couldn't reach the server");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const addEvent = useCallback(async (data) => {
+    const res = await fetch(`${PROXY_URL}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error || `Server returned ${res.status}`);
+    }
+    const saved = await res.json();
+    const newEvent = { id: saved.id || data.id, name: data.name, location: data.location, eventDate: data.eventDate };
+    setEvents(prev => {
+      const exists = prev.some(ev => ev.id === newEvent.id);
+      return exists ? prev.map(ev => ev.id === newEvent.id ? newEvent : ev) : [...prev, newEvent];
+    });
+    return newEvent.id;
   }, []);
 
   const saveProduct = useCallback(async (data) => {
@@ -1100,7 +1298,7 @@ function App() {
       const res = await fetch(`${PROXY_URL}/sale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart, createdAt }),
+        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart, createdAt, eventId: selectedEventId }),
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
@@ -1115,7 +1313,7 @@ function App() {
     } finally {
       setCheckingOut(false);
     }
-  }, [cart]);
+  }, [cart, selectedEventId]);
 
   return (
     <React.Fragment>
@@ -1147,6 +1345,10 @@ function App() {
                 onPriceChange={changePrice}
                 saleDate={saleDate}
                 onSaleDateChange={setSaleDate}
+                events={events}
+                selectedEventId={selectedEventId}
+                onEventChange={setSelectedEventId}
+                onAddEvent={addEvent}
               />
             </div>
           )}
@@ -1167,6 +1369,10 @@ function App() {
                 onPriceChange={changePrice}
                 saleDate={saleDate}
                 onSaleDateChange={setSaleDate}
+                events={events}
+                selectedEventId={selectedEventId}
+                onEventChange={setSelectedEventId}
+                onAddEvent={addEvent}
               />
             </div>
           )}
@@ -1181,7 +1387,11 @@ function App() {
             />
           )}
 
-          {tab === "sales" && <SalesPanel />}
+          {tab === "sales" && <SalesPanel events={events} onAddEvent={addEvent} />}
+
+          {tab === "events" && (
+            <EventsPanel events={events} loadError={eventsLoadError} onAddEvent={addEvent} />
+          )}
 
           {tab === "giftcards" && <ComingSoon label="Gift Cards & Coupons" />}
           {tab === "timekeeping" && <ComingSoon label="Time" />}
