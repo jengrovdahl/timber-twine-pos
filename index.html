@@ -367,6 +367,26 @@ function todayLocalDateString() {
   return `${year}-${month}-${day}`;
 }
 
+function localDateInputValue(date) {
+  // Same as todayLocalDateString but for an arbitrary Date object.
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function localDateTimeToUtcSqlite(dateStr, timeSourceDate) {
+  // Combines a chosen local calendar date ("YYYY-MM-DD") with the
+  // time-of-day from timeSourceDate, then converts to the UTC
+  // "YYYY-MM-DD HH:MM:SS" format used for the sales.created_at column.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const combined = new Date(
+    y, m - 1, d,
+    timeSourceDate.getHours(), timeSourceDate.getMinutes(), timeSourceDate.getSeconds()
+  );
+  return combined.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
+}
+
 function Header() {
   return (
     <header className="site-header">
@@ -453,7 +473,7 @@ function ProductGrid({ products, onAdd, onEdit, onDelete }) {
   );
 }
 
-function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange }) {
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange, saleDate, onSaleDateChange }) {
   const rate = LOCATIONS.find(l => l.name === location)?.rate ?? LOCATIONS[0].rate;
   const rawSubtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
 
@@ -519,7 +539,14 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
             <option value="cash">Cash (tax included)</option>
           </select>
         </div>
+        <div>
+          <label>Sale Date</label>
+          <input type="date" value={saleDate} onChange={e => onSaleDateChange(e.target.value)} />
+        </div>
       </div>
+      {saleDate !== todayLocalDateString() && (
+        <div className="cart-line-sub" style={{ marginTop: -6, marginBottom: 10 }}>Recording this sale as {new Date(saleDate + "T00:00:00").toLocaleDateString()} instead of today.</div>
+      )}
 
       <div style={{ marginTop: 12 }}>
         <div className="totals-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
@@ -532,7 +559,7 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
       <button
         className="btn btn-primary btn-full"
         disabled={cart.length === 0 || checkingOut || cart.some(l => l.variablePrice && (!l.price || l.price <= 0))}
-        onClick={() => onCheckout(subtotal, tax, total, paymentMethod, location)}
+        onClick={() => onCheckout(subtotal, tax, total, paymentMethod, location, saleDate)}
       >
         {checkingOut ? "Recording sale…" : "Complete Sale"}
       </button>
@@ -781,6 +808,7 @@ function SaleEditForm({ sale, onSave, onCancel, saving }) {
   const [paymentMethod, setPaymentMethod] = useState(sale.paymentMethod || "card");
   const [location, setLocation] = useState(sale.location || LOCATIONS[0].name);
   const [total, setTotal] = useState(String(sale.total));
+  const [saleDate, setSaleDate] = useState(localDateInputValue(parseUtcTimestamp(sale.createdAt)));
 
   return (
     <div className="panel" style={{ marginTop: 18 }}>
@@ -803,6 +831,10 @@ function SaleEditForm({ sale, onSave, onCancel, saving }) {
           <label>Total ($)</label>
           <input type="number" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} />
         </div>
+        <div>
+          <label>Sale Date</label>
+          <input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
+        </div>
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         <button
@@ -815,6 +847,7 @@ function SaleEditForm({ sale, onSave, onCancel, saving }) {
             total: parseFloat(total),
             paymentMethod,
             location,
+            createdAt: localDateTimeToUtcSqlite(saleDate, parseUtcTimestamp(sale.createdAt)),
           })}
         >
           {saving ? "Saving…" : "Save Changes"}
@@ -956,6 +989,7 @@ function App() {
   const [lastSale, setLastSale] = useState(null);
   const [location, setLocation] = useState(LOCATIONS[0].name);
   const [paymentMethod, setPaymentMethod] = useState("card");
+  const [saleDate, setSaleDate] = useState(todayLocalDateString());
 
   useEffect(() => {
     let cancelled = false;
@@ -1059,13 +1093,14 @@ function App() {
     setCart(prev => prev.filter(l => l.key !== key));
   }, []);
 
-  const checkout = useCallback(async (subtotal, tax, total, paymentMethod, location) => {
+  const checkout = useCallback(async (subtotal, tax, total, paymentMethod, location, saleDate) => {
     setCheckingOut(true);
     try {
+      const createdAt = localDateTimeToUtcSqlite(saleDate, new Date());
       const res = await fetch(`${PROXY_URL}/sale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart }),
+        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart, createdAt }),
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
@@ -1073,6 +1108,7 @@ function App() {
       }
       setLastSale({ subtotal, tax, total, count: cart.length });
       setCart([]);
+      setSaleDate(todayLocalDateString());
     } catch (err) {
       console.error(err);
       alert("Couldn't record the sale — check the console for details.");
@@ -1109,6 +1145,8 @@ function App() {
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
                 onPriceChange={changePrice}
+                saleDate={saleDate}
+                onSaleDateChange={setSaleDate}
               />
             </div>
           )}
@@ -1127,6 +1165,8 @@ function App() {
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
                 onPriceChange={changePrice}
+                saleDate={saleDate}
+                onSaleDateChange={setSaleDate}
               />
             </div>
           )}
