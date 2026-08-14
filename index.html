@@ -358,6 +358,15 @@ function parseUtcTimestamp(s) {
   return new Date(s.replace(" ", "T") + "Z");
 }
 
+function todayLocalDateString() {
+  // Local (not UTC) today, formatted for an <input type="date"> value.
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function Header() {
   return (
     <header className="site-header">
@@ -820,8 +829,8 @@ function SalesPanel() {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(todayLocalDateString());
+  const [to, setTo] = useState(todayLocalDateString());
   const [editingSale, setEditingSale] = useState(null);
   const [saving, setSaving] = useState(false);
 
