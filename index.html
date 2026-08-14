@@ -1212,11 +1212,13 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
     }
   };
 
-  const grossSales = sales.reduce((s, r) => s + r.total, 0);
-  const taxCollected = sales.reduce((s, r) => s + r.tax, 0);
-  const netSales = sales.reduce((s, r) => s + r.subtotal, 0);
+  // Cash sales are priced tax-inclusive, so the round sticker amount lives
+  // in `total`. Card sales have tax added on top, so the round amount lives
+  // in `subtotal` instead (total = subtotal + tax, which isn't round).
+  // Total Sales always uses whichever field holds that clean number.
+  const totalSales = sales.reduce((s, r) => s + (r.paymentMethod === "cash" ? r.total : r.subtotal), 0);
   const txCount = sales.length;
-  const avgSale = txCount ? grossSales / txCount : 0;
+  const avgSale = txCount ? totalSales / txCount : 0;
 
   return (
     <div>
@@ -1254,9 +1256,7 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
           </div>
         </div>
         <div className="stat-grid">
-          <div className="stat-card"><div className="stat-label">Gross Sales</div><div className="stat-value">{formatMoney(grossSales)}</div></div>
-          <div className="stat-card"><div className="stat-label">Tax</div><div className="stat-value">{formatMoney(taxCollected)}</div></div>
-          <div className="stat-card"><div className="stat-label">Net Sales</div><div className="stat-value">{formatMoney(netSales)}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Sales</div><div className="stat-value">{formatMoney(totalSales)}</div></div>
           <div className="stat-card"><div className="stat-label">Transactions</div><div className="stat-value">{txCount}</div></div>
           <div className="stat-card"><div className="stat-label">Avg Sale</div><div className="stat-value">{formatMoney(avgSale)}</div></div>
         </div>
