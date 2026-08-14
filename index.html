@@ -830,8 +830,8 @@ function SalesPanel() {
     setLoadError(null);
     try {
       const params = new URLSearchParams();
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
+      if (from) params.set("fromUtc", new Date(from + "T00:00:00").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
+      if (to) params.set("toUtc", new Date(to + "T23:59:59.999").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
       const res = await fetch(`${PROXY_URL}/sales?${params.toString()}`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = await res.json();
