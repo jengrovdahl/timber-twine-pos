@@ -1148,6 +1148,7 @@ function App() {
   const [location, setLocation] = useState(LOCATIONS[0].name);
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [saleDate, setSaleDate] = useState(todayLocalDateString());
+  const [productSearch, setProductSearch] = useState("");
   const [events, setEvents] = useState([{ id: "event-none", name: "Non-Event Sales", location: null, eventDate: null }]);
   const [eventsLoadError, setEventsLoadError] = useState(null);
   const [selectedEventId, setSelectedEventId] = useState("event-none");
@@ -1330,7 +1331,17 @@ function App() {
             <div className="layout">
               <div className="panel">
                 <h2>Products</h2>
-                <ProductGrid products={products} onAdd={addProduct} />
+                <input
+                  type="text"
+                  value={productSearch}
+                  onChange={e => setProductSearch(e.target.value)}
+                  placeholder="Search products…"
+                  style={{ width: "100%", marginBottom: 14 }}
+                />
+                <ProductGrid
+                  products={productSearch.trim() ? products.filter(p => p.name.toLowerCase().includes(productSearch.trim().toLowerCase())) : products}
+                  onAdd={addProduct}
+                />
               </div>
               <CartPanel
                 cart={cart}
