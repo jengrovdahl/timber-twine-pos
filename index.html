@@ -130,6 +130,26 @@
   .layout{display:grid; grid-template-columns: 1.5fr 1fr; gap:22px;}
   @media (max-width: 860px){ .layout{grid-template-columns:1fr;} }
 
+  @media (max-width: 600px){
+    .site-header{padding:14px 16px;}
+    .brand-word{font-size:26px;}
+    .brand-tag{font-size:9px;}
+    .wreath{width:28px;height:28px;}
+    main{padding:16px 14px 40px;}
+    .panel{padding:14px;}
+    .catalog-grid{grid-template-columns:repeat(2, 1fr); gap:10px;}
+    .product-card{padding:10px;}
+    .icon-btn{width:34px; height:34px; font-size:15px;}
+    .qty-btn{width:32px; height:32px; font-size:16px;}
+    .field-row > div{min-width:100%;}
+    input, select{font-size:16px; padding:11px 12px;}
+    .btn{padding:13px 18px; font-size:15px;}
+    .btn-sm{padding:10px 14px; font-size:13.5px;}
+    .cart-line{padding:11px 0;}
+    .stat-grid{grid-template-columns:repeat(2, 1fr);}
+    .panel-head{flex-wrap:wrap; gap:10px;}
+  }
+
   .panel{
     background:var(--white);
     border:1px solid var(--line);
@@ -406,7 +426,7 @@ function ProductGrid({ products, onAdd, onEdit, onDelete }) {
             )}
             <div className="product-name">{p.name}</div>
             <div className="product-cat">{p.category || "Uncategorized"}</div>
-            <div className="product-price">{formatMoney(p.price)}</div>
+            <div className="product-price">{p.variablePrice ? "Set at checkout" : formatMoney(p.price)}</div>
             <span className={"stock-pill" + (out ? " out" : low ? " low" : "")}>
               {out ? "Out of stock" : `${p.stock} in stock`}
             </span>
@@ -417,7 +437,7 @@ function ProductGrid({ products, onAdd, onEdit, onDelete }) {
   );
 }
 
-function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange }) {
+function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, onLocationChange, paymentMethod, onPaymentMethodChange, onPriceChange }) {
   const rate = LOCATIONS.find(l => l.name === location)?.rate ?? LOCATIONS[0].rate;
   const rawSubtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
 
@@ -440,7 +460,23 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
         <div className="cart-line" key={line.key}>
           <div>
             <div className="cart-line-name">{line.name}</div>
-            <div className="cart-line-sub">{formatMoney(line.price)} each</div>
+            {line.variablePrice ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <span className="cart-line-sub">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={line.price === 0 ? "" : line.price}
+                  onChange={e => onPriceChange(line.key, parseFloat(e.target.value))}
+                  placeholder="0.00"
+                  style={{ width: 90, padding: "5px 8px", fontSize: 13 }}
+                />
+                <span className="cart-line-sub">each</span>
+              </div>
+            ) : (
+              <div className="cart-line-sub">{formatMoney(line.price)} each</div>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="qty-btn" onClick={() => onQty(line.key, -1)}>−</button>
@@ -479,7 +515,7 @@ function CartPanel({ cart, onQty, onRemove, onCheckout, checkingOut, location, o
       )}
       <button
         className="btn btn-primary btn-full"
-        disabled={cart.length === 0 || checkingOut}
+        disabled={cart.length === 0 || checkingOut || cart.some(l => l.variablePrice && (!l.price || l.price <= 0))}
         onClick={() => onCheckout(subtotal, tax, total, paymentMethod, location)}
       >
         {checkingOut ? "Recording sale…" : "Complete Sale"}
@@ -578,6 +614,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
   const [priceMode, setPriceMode] = useState("manual");
   const [hours, setHours] = useState("");
   const [rate, setRate] = useState("15");
+  const [variablePrice, setVariablePrice] = useState(initial?.variablePrice || false);
 
   const calculated = useMemo(() => {
     const h = parseFloat(hours);
@@ -586,8 +623,8 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
     return h * r;
   }, [hours, rate]);
 
-  const finalPrice = parseFloat(price);
-  const canSave = name.trim().length > 0 && !isNaN(finalPrice) && finalPrice >= 0;
+  const finalPrice = price === "" ? 0 : parseFloat(price);
+  const canSave = name.trim().length > 0 && (variablePrice || (!isNaN(finalPrice) && finalPrice >= 0));
 
   return (
     <div className="panel" style={{ marginTop: 18 }}>
@@ -604,11 +641,20 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
       </div>
 
       <div className="field-row">
+        <div style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: "var(--ink)" }}>
+            <input type="checkbox" checked={variablePrice} onChange={e => setVariablePrice(e.target.checked)} style={{ width: "auto" }} />
+            Variable price — set at checkout (e.g. embroidered sweaters)
+          </label>
+        </div>
+      </div>
+
+      <div className="field-row">
         <div>
           <label>Stock</label>
           <input type="number" min="0" step="1" value={stock} onChange={e => setStock(e.target.value)} />
         </div>
-        <div>
+        <div style={{ display: variablePrice ? "none" : "flex" }}>
           <label>Price mode</label>
           <select value={priceMode} onChange={e => setPriceMode(e.target.value)}>
             <option value="manual">Type price directly</option>
@@ -617,7 +663,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
         </div>
       </div>
 
-      {priceMode === "calc" && (
+      {!variablePrice && priceMode === "calc" && (
         <div className="field-row">
           <div>
             <label>Hours spent</label>
@@ -630,7 +676,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
         </div>
       )}
 
-      {priceMode === "calc" && calculated !== null && (
+      {!variablePrice && priceMode === "calc" && calculated !== null && (
         <div className="calc-result">
           Calculated price: <strong>{formatMoney(calculated)}</strong>
           <button
@@ -643,12 +689,16 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
         </div>
       )}
 
-      <div className="field-row">
-        <div>
-          <label>Price ($)</label>
-          <input type="number" min="0" step="0.5" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" />
+      {variablePrice ? (
+        <div className="calc-result">This product's price will be entered in the cart at checkout instead of being fixed here.</div>
+      ) : (
+        <div className="field-row">
+          <div>
+            <label>Price ($)</label>
+            <input type="number" min="0" step="0.5" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" />
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
         <button
@@ -660,6 +710,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
             category: category.trim(),
             stock: parseInt(stock, 10) || 0,
             price: finalPrice,
+            variablePrice,
           })}
         >
           {saving ? "Saving…" : initial ? "Save Changes" : "Add Product"}
@@ -965,11 +1016,16 @@ function App() {
   const addProduct = useCallback((p) => {
     setCart(prev => {
       const existing = prev.find(l => l.id === p.id);
-      if (existing) {
+      if (existing && !p.variablePrice) {
         return prev.map(l => l.id === p.id ? { ...l, qty: l.qty + 1 } : l);
       }
-      return [...prev, { key: p.id, id: p.id, name: p.name, price: p.price, qty: 1 }];
+      const key = p.variablePrice ? `${p.id}-${Date.now()}` : p.id;
+      return [...prev, { key, id: p.id, name: p.name, price: p.variablePrice ? 0 : p.price, qty: 1, variablePrice: !!p.variablePrice }];
     });
+  }, []);
+
+  const changePrice = useCallback((key, price) => {
+    setCart(prev => prev.map(l => l.key === key ? { ...l, price: isNaN(price) ? 0 : Math.max(0, price) } : l));
   }, []);
 
   const addCustom = useCallback((line) => {
@@ -1036,6 +1092,7 @@ function App() {
                 onLocationChange={setLocation}
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
+                onPriceChange={changePrice}
               />
             </div>
           )}
@@ -1053,6 +1110,7 @@ function App() {
                 onLocationChange={setLocation}
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
+                onPriceChange={changePrice}
               />
             </div>
           )}
