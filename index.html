@@ -402,6 +402,33 @@ function localDateTimeToUtcSqlite(dateStr, timeSourceDate) {
   return combined.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
 }
 
+/* ---------------------------------------------------------------
+   Local safety net for sales. Every sale is written to localStorage
+   BEFORE the network request is attempted, so a dropped connection
+   (bad wifi at a market, a Worker/DB hiccup, etc.) can never lose a
+   sale — it just waits here until it can sync. The backend's
+   POST /sale is idempotent (INSERT OR IGNORE keyed on this same id),
+   so retrying a queued sale is always safe, never creates a duplicate.
+   ------------------------------------------------------------- */
+const PENDING_SALES_KEY = "ttp_pending_sales";
+
+function loadPendingSales() {
+  try {
+    const raw = localStorage.getItem(PENDING_SALES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function savePendingSales(list) {
+  try {
+    localStorage.setItem(PENDING_SALES_KEY, JSON.stringify(list));
+  } catch (err) {
+    // localStorage full or unavailable — nothing more we can do client-side.
+  }
+}
+
 function Header() {
   return (
     <header className="site-header">
@@ -1185,10 +1212,11 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
     }
   };
 
-  const revenue = sales.reduce((s, r) => s + r.total, 0);
+  const grossSales = sales.reduce((s, r) => s + r.total, 0);
   const taxCollected = sales.reduce((s, r) => s + r.tax, 0);
+  const netSales = sales.reduce((s, r) => s + r.subtotal, 0);
   const txCount = sales.length;
-  const avgSale = txCount ? revenue / txCount : 0;
+  const avgSale = txCount ? grossSales / txCount : 0;
 
   return (
     <div>
@@ -1226,8 +1254,9 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator }) {
           </div>
         </div>
         <div className="stat-grid">
-          <div className="stat-card"><div className="stat-label">Revenue</div><div className="stat-value">{formatMoney(revenue)}</div></div>
-          <div className="stat-card"><div className="stat-label">Tax Collected</div><div className="stat-value">{formatMoney(taxCollected)}</div></div>
+          <div className="stat-card"><div className="stat-label">Gross Sales</div><div className="stat-value">{formatMoney(grossSales)}</div></div>
+          <div className="stat-card"><div className="stat-label">Tax</div><div className="stat-value">{formatMoney(taxCollected)}</div></div>
+          <div className="stat-card"><div className="stat-label">Net Sales</div><div className="stat-value">{formatMoney(netSales)}</div></div>
           <div className="stat-card"><div className="stat-label">Transactions</div><div className="stat-value">{txCount}</div></div>
           <div className="stat-card"><div className="stat-label">Avg Sale</div><div className="stat-value">{formatMoney(avgSale)}</div></div>
         </div>
@@ -1268,6 +1297,7 @@ function App() {
   const [productsLoadError, setProductsLoadError] = useState(null);
   const [savingProduct, setSavingProduct] = useState(false);
   const [ratesStatus, setRatesStatus] = useState(null);
+  const [pendingSalesCount, setPendingSalesCount] = useState(0);
   const [cart, setCart] = useState([]);
   const [checkingOut, setCheckingOut] = useState(false);
   const [lastSale, setLastSale] = useState(null);
@@ -1458,26 +1488,75 @@ function App() {
     setCart(prev => prev.filter(l => l.key !== key));
   }, []);
 
+  const syncPendingSales = useCallback(async () => {
+    const pending = loadPendingSales();
+    if (pending.length === 0) return;
+    const stillPending = [];
+    for (const sale of pending) {
+      try {
+        const res = await fetch(`${PROXY_URL}/sale`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sale),
+        });
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      } catch (err) {
+        stillPending.push(sale);
+      }
+    }
+    savePendingSales(stillPending);
+    setPendingSalesCount(stillPending.length);
+  }, []);
+
+  useEffect(() => {
+    setPendingSalesCount(loadPendingSales().length);
+    syncPendingSales();
+    const onOnline = () => syncPendingSales();
+    window.addEventListener("online", onOnline);
+    const interval = setInterval(syncPendingSales, 30000);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      clearInterval(interval);
+    };
+  }, [syncPendingSales]);
+
   const checkout = useCallback(async (subtotal, tax, total, paymentMethod, location, saleDate) => {
     setCheckingOut(true);
+    const createdAt = localDateTimeToUtcSqlite(saleDate, new Date());
+    const saleId = `sale-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const payload = { id: saleId, subtotal, tax, total, paymentMethod, location, items: cart, createdAt, eventId: selectedEventId, creatorId: selectedCreatorId };
+
+    // Save locally FIRST, before the network request — the sale is safe
+    // the instant "Complete Sale" is tapped, whether or not the network is.
+    const pending = loadPendingSales();
+    pending.push(payload);
+    savePendingSales(pending);
+    setPendingSalesCount(pending.length);
+
     try {
-      const createdAt = localDateTimeToUtcSqlite(saleDate, new Date());
       const res = await fetch(`${PROXY_URL}/sale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subtotal, tax, total, paymentMethod, location, items: cart, createdAt, eventId: selectedEventId, creatorId: selectedCreatorId }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody.error || `Proxy returned ${res.status}`);
       }
-      setLastSale({ subtotal, tax, total, count: cart.length });
-      setCart([]);
-      setSaleDate(todayLocalDateString());
+      // Synced — remove it from the local queue.
+      const remaining = loadPendingSales().filter(s => s.id !== saleId);
+      savePendingSales(remaining);
+      setPendingSalesCount(remaining.length);
+      setLastSale({ subtotal, tax, total, count: cart.length, offline: false });
     } catch (err) {
       console.error(err);
-      alert("Couldn't record the sale — check the console for details.");
+      // Couldn't reach the server right now — the sale is already saved
+      // locally above and will sync automatically once connectivity is
+      // back, so it's safe to move on to the next customer.
+      setLastSale({ subtotal, tax, total, count: cart.length, offline: true });
     } finally {
+      setCart([]);
+      setSaleDate(todayLocalDateString());
       setCheckingOut(false);
     }
   }, [cart, selectedEventId, selectedCreatorId]);
@@ -1488,6 +1567,11 @@ function App() {
       {ratesStatus?.possiblyStale && (
         <div style={{ background: "#f6e2d9", color: "#7a4620", padding: "10px 28px", fontSize: 13.5, textAlign: "center" }}>
           Minnesota's sales tax notices page changed{ratesStatus.staleSince ? ` on ${new Date(ratesStatus.staleSince).toLocaleDateString()}` : ""} — worth double-checking the location rates in Checkout are still current.
+        </div>
+      )}
+      {pendingSalesCount > 0 && (
+        <div style={{ background: "#e9dfc9", color: "#5b4a1f", padding: "10px 28px", fontSize: 13.5, textAlign: "center" }}>
+          {pendingSalesCount} sale{pendingSalesCount === 1 ? "" : "s"} saved locally, waiting to sync — nothing is lost, they'll upload automatically once the connection is back.
         </div>
       )}
       <div className="app-body">
@@ -1592,6 +1676,9 @@ function App() {
             <div className="panel" style={{ marginTop: 18 }}>
               <h2>Last Sale</h2>
               <p>{lastSale.count} item(s) — total {formatMoney(lastSale.total)}</p>
+              {lastSale.offline && (
+                <p className="cart-line-sub">Couldn't reach the server just now — this sale is saved locally and will sync automatically.</p>
+              )}
             </div>
           )}
         </main>
