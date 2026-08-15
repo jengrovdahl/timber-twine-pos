@@ -294,6 +294,7 @@
   .modal-box{
     background:var(--white); border-radius:var(--radius);
     padding:22px; max-width:420px; width:100%;
+    max-height:calc(100vh - 40px); overflow-y:auto;
     box-shadow:0 10px 30px rgba(0,0,0,0.25);
   }
   .modal-box h2{
@@ -972,12 +973,13 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
   const canSave = name.trim().length > 0 && (variablePrice || (!isNaN(finalPrice) && finalPrice >= 0));
 
   return (
-    <div className="panel" style={{ marginTop: 18 }}>
+    <div className="modal-backdrop" onClick={onCancel}>
+    <div className="modal-box" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
       <h2>{initial ? "Edit Product" : "Add Product"}</h2>
       <div className="field-row">
         <div style={{ flex: 2 }}>
           <label>Name</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Rainbow Frog" />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Rainbow Frog" autoFocus />
         </div>
         <div>
           <label>Category</label>
@@ -1062,6 +1064,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
         </button>
         <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
       </div>
+    </div>
     </div>
   );
 }
@@ -1266,8 +1269,15 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator, paymentTypes, 
   const [to, setTo] = useState(todayLocalDateString());
   const [eventFilter, setEventFilter] = useState("");
   const [creatorFilter, setCreatorFilter] = useState("");
+  const [productFilter, setProductFilter] = useState("");
+  const [debouncedProductFilter, setDebouncedProductFilter] = useState("");
   const [editingSale, setEditingSale] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedProductFilter(productFilter), 400);
+    return () => clearTimeout(t);
+  }, [productFilter]);
 
   const loadSales = useCallback(async () => {
     setLoading(true);
@@ -1278,6 +1288,7 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator, paymentTypes, 
       if (to) params.set("toUtc", new Date(to + "T23:59:59.999").toISOString().replace("T", " ").replace(/\.\d{3}Z$/, ""));
       if (eventFilter) params.set("eventId", eventFilter);
       if (creatorFilter) params.set("creatorId", creatorFilter);
+      if (debouncedProductFilter.trim()) params.set("product", debouncedProductFilter.trim());
       const res = await fetch(`${PROXY_URL}/sales?${params.toString()}`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const data = await res.json();
@@ -1288,7 +1299,7 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator, paymentTypes, 
     } finally {
       setLoading(false);
     }
-  }, [from, to, eventFilter, creatorFilter]);
+  }, [from, to, eventFilter, creatorFilter, debouncedProductFilter]);
 
   useEffect(() => { loadSales(); }, [loadSales]);
 
@@ -1366,8 +1377,12 @@ function SalesPanel({ events, onAddEvent, creators, onAddCreator, paymentTypes, 
               ))}
             </select>
           </div>
+          <div>
+            <label>Product</label>
+            <input type="text" value={productFilter} onChange={e => setProductFilter(e.target.value)} placeholder="Search product name…" />
+          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); setEventFilter(""); setCreatorFilter(""); }}>Clear</button>
+            <button className="btn btn-outline btn-sm" onClick={() => { setFrom(""); setTo(""); setEventFilter(""); setCreatorFilter(""); setProductFilter(""); }}>Clear</button>
           </div>
         </div>
         <div className="stat-grid">
